@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>云服务监控</title>
+    <style>
+      /* ── Reset ─────────────────────────────────────────────────────────────── */
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      html, body {
+        width: 100%; height: 100%;
+        background: transparent;
+        overflow: hidden;
+        font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      /* ── 展开状态：完整卡片 ──────────────────────────────────────────────────── */
+      .card {
+        position: absolute;
+        inset: 0;
+        border-radius: 14px;
+        background: rgba(16, 20, 28, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        color: #eef2ff;
+        display: flex;
+        flex-direction: column;
+        cursor: move;
+      }
+
+      /* ── 顶部标题栏（带 Provider 切换 Tab）───────────────────────────────────── */
+      .drag-bar {
+        flex-shrink: 0;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        gap: 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+      }
+
+      .tabs {
+        display: flex;
+        gap: 4px;
+        flex: 1;
+        overflow: hidden;
+      }
+
+      .tab {
+        padding: 3px 9px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        opacity: 0.55;
+        white-space: nowrap;
+        transition: opacity .15s, background .15s;
+      }
+      .tab:hover { opacity: 0.85; background: rgba(255,255,255,0.08); }
+      .tab.active {
+        opacity: 1;
+        background: rgba(255, 255, 255, 0.14);
+      }
+      /* 状态点（已有数据 = 绿色，未连接 = 灰色）*/
+      .tab::before {
+        content: '';
+        display: inline-block;
+        width: 5px; height: 5px;
+        border-radius: 50%;
+        background: #555;
+        margin-right: 5px;
+        vertical-align: middle;
+      }
+      .tab.connected::before { background: #52e36a; }
+
+      .drag-tip {
+        flex-shrink: 0;
+        font-size: 13px;
+        opacity: 0.3;
+        letter-spacing: -1px;
+      }
+
+      /* ── 数据内容区 ──────────────────────────────────────────────────────────── */
+      .content {
+        flex: 1;
+        padding: 12px 14px 14px;
+        overflow: hidden;
+      }
+
+      .waiting {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        opacity: 0.45;
+        gap: 8px;
+      }
+      .waiting::before {
+        content: '';
+        display: inline-block;
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        background: #555;
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 0.3; }
+        50%       { opacity: 1;   }
+      }
+
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 8px;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .row:last-child { margin-bottom: 0; }
+
+      .k { opacity: 0.65; flex-shrink: 0; }
+      .v {
+        text-align: right;
+        max-width: 60%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-variant-numeric: tabular-nums;
+      }
+      .v.hi { color: #60f080; font-weight: 700; }
+
+      .updated {
+        margin-top: 10px;
+        font-size: 10px;
+        opacity: 0.35;
+        text-align: right;
+      }
+
+      /* ── 配额分组（百度千帆等三段配额）──────────────────────────────────────────── */
+      .quota-section {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .quota-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+
+      .quota-group {
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 6px;
+        padding: 7px 5px 6px;
+        text-align: center;
+      }
+
+      .quota-group-label {
+        font-size: 9px;
+        color: rgba(238, 242, 255, 0.45);
+        margin-bottom: 4px;
+        letter-spacing: 0.2px;
+      }
+
+      .quota-group-usage {
+        font-size: 10px;
+        color: rgba(238, 242, 255, 0.6);
+        margin-bottom: 3px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .quota-group-bar {
+        width: 70%;
+        margin: 0 auto 4px;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 1px;
+        overflow: hidden;
+      }
+
+      .quota-group-bar-fill {
+        height: 100%;
+        border-radius: 1px;
+        background: #52e36a;
+        transition: width 0.4s;
+      }
+
+      .quota-group.warn .quota-group-bar-fill { background: #ff6b6b; }
+
+      .quota-group-remain {
+        font-size: 12px;
+        font-weight: 700;
+        color: #60f080;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .quota-group-remain.warn { color: #ff7070; }
+
+      /* ── 折叠/小块状态 ───────────────────────────────────────────────────────── */
+      /* 折叠时隐藏完整卡片，显示小块 */
+      body.compact .card { display: none; }
+
+      .compact-view {
+        display: none; /* 展开时隐藏 */
+        position: absolute;
+        inset: 0;
+        border-radius: 12px; /* 减小圆角 */
+        background: rgba(16, 20, 28, 0.95); /* 提高不透明度，确保在 Windows 下可见 */
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        color: #eef2ff;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 10px; /* 减小内边距 */
+        gap: 6px; /* 减小间距 */
+        cursor: move;
+        /* 确保内容可见 */
+        z-index: 1;
+      }
+      body.compact .compact-view { display: flex; }
+
+      .compact-provider {
+        font-size: 9px; /* 减小字体 */
+        opacity: 0.5;
+        flex-shrink: 0;
+        cursor: pointer;
+      }
+      .compact-text {
+        font-size: 11px; /* 减小字体 */
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-align: right;
+        flex: 1;
+      }
+
+      /* ── 模式切换按钮（展开态左上角 / 折叠态右侧）───────────────── */
+      .mode-btn {
+        flex-shrink: 0;
+        width: 20px; /* 减小按钮尺寸 */
+        height: 20px;
+        border: none;
+        background: transparent;
+        color: rgba(238, 242, 255, 0.3);
+        cursor: pointer;
+        font-size: 10px; /* 减小图标尺寸 */
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        line-height: 1;
+        transition: color 0.15s, background 0.15s;
+      }
+      .mode-btn:hover {
+        color: rgba(238, 242, 255, 0.85);
+        background: rgba(255, 255, 255, 0.09);
+      }
+      .mode-btn.pinned {
+        color: #60f080;
+        background: rgba(96, 240, 128, 0.15);
+      }
+      .mode-btn.pinned:hover {
+        color: #60f080;
+        background: rgba(96, 240, 128, 0.25);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ── 展开卡片 ─────────────────────────────────────────────────────────── -->
+    <div class="card" id="card">
+      <div class="drag-bar">
+        <div class="tabs" id="tabs"></div>
+        <!-- 置顶按钮：切换窗口置顶状态 -->
+        <button class="mode-btn" id="pinBtn" title="取消置顶" onclick="togglePin()" onmousedown="event.stopPropagation()">&#x1F4CC;</button>
+        <!-- macOS: 关闭按钮 | 其他平台: 折叠按钮 -->
+        <button class="mode-btn" id="actionBtn" title="折叠" onclick="handleActionBtn()" onmousedown="event.stopPropagation()">&#x229F;</button>
+      </div>
+      <div class="content" id="content">
+        <div class="waiting">等待连接...</div>
+      </div>
+    </div>
+
+    <!-- ── 折叠小块（手动折叠后显示，macOS 下不使用）────────────────────────────────── -->
+    <div class="compact-view" id="compactView" ondblclick="toggleMode()">
+      <span class="compact-provider" id="compactProvider" onclick="cycleProvider()">&#x21C4;</span>
+      <span class="compact-text" id="compactText">等待中...</span>
+      <!-- 展开按钮 -->
+      <button class="mode-btn" title="展开" onclick="toggleMode()">&#x229E;</button>
+    </div>
+
+    <script>
+      // ── 平台检测 ────────────────────────────────────────────────────────────────
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+
+      // ── 状态 ────────────────────────────────────────────────────────────────
+      /** @type {Record<string, {provider_id:string, provider_name:string, items:{key:string,value:string,highlight:boolean}[], compact_text:string}>} */
+      const store = {};
+      let activeId = null;
+
+      // ── 渲染函数 ─────────────────────────────────────────────────────────────
+      function renderTabs() {
+        const el = document.getElementById('tabs');
+        el.innerHTML = '';
+        for (const [id, data] of Object.entries(store)) {
+          const tab = document.createElement('div');
+          tab.className = 'tab connected' + (id === activeId ? ' active' : '');
+          tab.textContent = data.provider_name;
+          tab.dataset.id = id;
+          tab.addEventListener('click', () => selectProvider(id));
+          el.appendChild(tab);
+        }
+      }
+
+      function renderContent() {
+        const el = document.getElementById('content');
+        const data = store[activeId];
+        if (!data) {
+          el.innerHTML = '<div class="waiting">等待连接...</div>';
+          adjustWindowHeight();
+          return;
+        }
+
+        // ── 基本信息行 ──
+        const rows = (data.items || []).map(item =>
+          `<div class="row">
+            <div class="k">${escHtml(item.key)}</div>
+            <div class="v${item.highlight ? ' hi' : ''}">${escHtml(item.value)}</div>
+          </div>`
+        ).join('');
+
+        // ── 配额分组（近5小时 / 近一周 / 近一月）──
+        let quotaHtml = '';
+        if (data.quota_groups && data.quota_groups.length > 0) {
+          const groups = data.quota_groups.map(g => {
+            const pct      = g.limit > 0 ? Math.min(100, (g.used / g.limit) * 100).toFixed(1) : 0;
+            const groupCls = g.highlight ? 'quota-group warn' : 'quota-group';
+            const remCls   = g.highlight ? 'quota-group-remain warn' : 'quota-group-remain';
+            
+            // 如果有限额，显示完整的配额信息；否则只显示已用量
+            if (g.limit > 0) {
+              return `<div class="${groupCls}">
+                <div class="quota-group-label">${escHtml(g.label)}</div>
+                <div class="quota-group-usage">${formatNum(g.used)}/${formatNum(g.limit)}</div>
+                <div class="quota-group-bar"><div class="quota-group-bar-fill" style="width:${pct}%"></div></div>
+                <div class="${remCls}">剩 ${formatNum(g.remain)}</div>
+              </div>`;
+            } else {
+              return `<div class="${groupCls}">
+                <div class="quota-group-label">${escHtml(g.label)}</div>
+                <div class="${remCls}" style="margin-top: 8px;">${escHtml(g.used)}</div>
+              </div>`;
+            }
+          }).join('');
+          quotaHtml = `<div class="quota-section"><div class="quota-grid">${groups}</div></div>`;
+        }
+
+        // ── 最后更新时间（优先使用数据携带的时间戳）──
+        const ts = data.updated_at
+          ? new Date(data.updated_at).toLocaleTimeString('zh-CN', { hour12: false })
+          : new Date().toLocaleTimeString('zh-CN', { hour12: false });
+
+        el.innerHTML = rows + quotaHtml + `<div class="updated">更新于 ${ts}</div>`;
+        
+        // 内容渲染完成后调整窗口高度
+        requestAnimationFrame(() => adjustWindowHeight());
+      }
+
+      function renderCompact() {
+        const data = store[activeId];
+        const nameEl = document.getElementById('compactProvider');
+        const textEl = document.getElementById('compactText');
+        if (!data) {
+          nameEl.textContent = '切换';
+          textEl.textContent = '等待中...';
+          return;
+        }
+        const ids = Object.keys(store);
+        nameEl.textContent = ids.length > 1
+          ? data.provider_name.slice(0, 2) + ' ›'
+          : data.provider_name.slice(0, 2);
+        textEl.textContent = data.compact_text || data.provider_name;
+      }
+
+      function selectProvider(id) {
+        if (!store[id]) return;
+        activeId = id;
+        renderTabs();
+        renderContent();
+        renderCompact();
+      }
+
+      /** 点击折叠小块的 Provider 标签切换到下一个 Provider */
+      function cycleProvider() {
+        const ids = Object.keys(store);
+        if (ids.length <= 1) return;
+        const idx = ids.indexOf(activeId);
+        selectProvider(ids[(idx + 1) % ids.length]);
+      }
+
+      // ── 公共 API（由 Rust 通过 eval 调用）────────────────────────────────────
+
+      /**
+       * 接收来自任意 Provider 的数据并更新 UI
+       * @param {{ provider_id:string, provider_name:string, items:Array, compact_text:string }} data
+       */
+      window.updateProviderData = function (data) {
+        if (!data?.provider_id) return;
+        store[data.provider_id] = data;
+        if (!activeId) activeId = data.provider_id;
+        renderTabs();
+        renderContent();
+        renderCompact();
+      };
+
+      /**
+       * 切换折叠/展开模式（由 Rust eval 调用）
+       * @param {boolean} compact
+       */
+      window.setCompactMode = function (compact) {
+        console.log('[overlay] setCompactMode called with:', compact);
+        console.log('[overlay] Current body classes before:', document.body.className);
+        
+        if (compact) {
+          document.body.classList.add('compact');
+        } else {
+          document.body.classList.remove('compact');
+        }
+        
+        console.log('[overlay] New body classes after:', document.body.className);
+        console.log('[overlay] Body has compact class:', document.body.classList.contains('compact'));
+        
+        // 强制检查 compact-view 的显示状态
+        const compactView = document.getElementById('compactView');
+        const card = document.getElementById('card');
+        
+        if (compactView && card) {
+          const compactStyle = window.getComputedStyle(compactView);
+          const cardStyle = window.getComputedStyle(card);
+          console.log('[overlay] CompactView display:', compactStyle.display);
+          console.log('[overlay] Card display:', cardStyle.display);
+          
+          // 如果 CSS 没有生效，手动设置
+          if (compact && compactStyle.display === 'none') {
+            console.warn('[overlay] CSS not working, manually setting display');
+            compactView.style.display = 'flex';
+            card.style.display = 'none';
+          } else if (!compact && cardStyle.display === 'none') {
+            console.warn('[overlay] CSS not working, manually setting display');
+            compactView.style.display = 'none';
+            card.style.display = 'flex';
+          }
+        }
+        
+        if (compact) renderCompact();
+      };
+
+      /** 调整窗口高度以适应内容 */
+      async function adjustWindowHeight() {
+        // 只在展开模式下调整高度
+        if (document.body.classList.contains('compact')) return;
+        
+        try {
+          const dragBar = document.querySelector('.drag-bar');
+          const content = document.querySelector('.content');
+          if (!dragBar || !content) return;
+          
+          // 计算实际内容高度：
+          // 1. 标题栏高度
+          const dragBarHeight = 36; // .drag-bar 固定高度
+          
+          // 2. 内容区域的实际高度（包括所有子元素）
+          // 使用临时容器测量真实高度，避免被当前窗口限制
+          const tempContainer = document.createElement('div');
+          tempContainer.style.cssText = 'position:absolute;visibility:hidden;width:328px;'; // 340 - 12 (padding)
+          tempContainer.innerHTML = content.innerHTML;
+          document.body.appendChild(tempContainer);
+          
+          // 获取内容实际高度 + padding
+          const contentPadding = 12 + 14 + 14; // padding: 12px 14px 14px
+          const actualContentHeight = tempContainer.scrollHeight + contentPadding;
+          
+          document.body.removeChild(tempContainer);
+          
+          // 3. 计算总高度 = 标题栏 + 内容（不再需要 inset 边距）
+          const totalHeight = dragBarHeight + actualContentHeight;
+          const totalWidth = 340; // EXPANDED_W - 固定宽度
+          
+          const { getCurrentWebviewWindow } = window.__TAURI__.webviewWindow;
+          const webview = getCurrentWebviewWindow();
+          
+          // 发送调整尺寸事件到 Rust
+          await webview.emit('overlay_adjust_size', {
+            width: totalWidth,
+            height: totalHeight
+          });
+          
+          console.log('[overlay] Adjusted size:', totalWidth, 'x', totalHeight, 'dragBar:', dragBarHeight, 'content:', actualContentHeight);
+        } catch (e) {
+          console.error('[overlay] adjustWindowHeight error:', e);
+        }
+      }
+
+      /** 右上角操作按钮点击处理 */
+      async function handleActionBtn() {
+        console.log('[overlay] handleActionBtn called, isMac:', isMac);
+        if (isMac) {
+          // macOS: 关闭窗口
+          await closeWindow();
+        } else {
+          // 其他平台: 切换折叠/展开
+          await toggleMode();
+        }
+      }
+
+      /** 关闭窗口（macOS）*/
+      async function closeWindow() {
+        console.log('[overlay] closeWindow called');
+        console.log('[overlay] window.__TAURI__ exists:', !!window.__TAURI__);
+        
+        try {
+          // 检查 Tauri API 是否可用
+          if (typeof window.__TAURI__ === 'undefined') {
+            console.error('[overlay] Tauri API not loaded yet');
+            // 尝试延迟执行
+            setTimeout(closeWindow, 100);
+            return;
+          }
+          
+          if (!window.__TAURI__.webviewWindow) {
+            console.error('[overlay] webviewWindow module not available');
+            return;
+          }
+          
+          const { getCurrentWebviewWindow } = window.__TAURI__.webviewWindow;
+          if (!getCurrentWebviewWindow) {
+            console.error('[overlay] getCurrentWebviewWindow not available');
+            return;
+          }
+          
+          const webview = getCurrentWebviewWindow();
+          console.log('[overlay] Got webview instance');
+          
+          const result = await webview.hide();
+          console.log('[overlay] Window hidden successfully, result:', result);
+        } catch (e) {
+          console.error('[overlay] closeWindow error:', e);
+          console.error('[overlay] Error name:', e.name);
+          console.error('[overlay] Error message:', e.message);
+          if (e.stack) {
+            console.error('[overlay] Error stack:', e.stack);
+          }
+        }
+      }
+
+      /** 右上角/折叠态按钮点击 → 发送切换事件到 Rust */
+      async function toggleMode() {
+        console.log('[overlay] toggleMode called');
+        try {
+          // 使用 Tauri 的 getCurrentWebviewWindow 和 emit
+          const { getCurrentWebviewWindow } = window.__TAURI__.webviewWindow;
+          const webview = getCurrentWebviewWindow();
+          console.log('[overlay] Emitting overlay_toggle_mode event');
+          await webview.emit('overlay_toggle_mode');
+          console.log('[overlay] Event emitted successfully');
+        } catch (e) {
+          console.error('[overlay] toggleMode error:', e);
+        }
+      }
+
+      /** 置顶按钮点击 → 发送切换置顶事件到 Rust */
+      async function togglePin() {
+        console.log('[overlay] togglePin called');
+        try {
+          const { getCurrentWebviewWindow } = window.__TAURI__.webviewWindow;
+          const webview = getCurrentWebviewWindow();
+          console.log('[overlay] Emitting overlay_toggle_pin event');
+          await webview.emit('overlay_toggle_pin');
+          console.log('[overlay] Pin toggle event emitted successfully');
+        } catch (e) {
+          console.error('[overlay] togglePin error:', e);
+        }
+      }
+
+      /** 更新置顶按钮状态（由 Rust 调用）*/
+      window.updatePinState = function(isPinned) {
+        const btn = document.getElementById('pinBtn');
+        if (btn) {
+          btn.title = isPinned ? '取消置顶' : '置顶窗口';
+          if (isPinned) {
+            btn.classList.add('pinned');
+          } else {
+            btn.classList.remove('pinned');
+          }
+        }
+      };
+
+      // 页面加载完成后，请求初始置顶状态
+      window.addEventListener('DOMContentLoaded', async () => {
+        console.log('[overlay] DOMContentLoaded, isMac:', isMac);
+        console.log('[overlay] Tauri available:', !!window.__TAURI__);
+        
+        // 根据平台设置操作按钮
+        const actionBtn = document.getElementById('actionBtn');
+        if (actionBtn) {
+          console.log('[overlay] Found actionBtn');
+          
+          // 移除 onclick 属性，使用事件监听器
+          actionBtn.removeAttribute('onclick');
+          
+          if (isMac) {
+            actionBtn.title = '关闭';
+            actionBtn.innerHTML = '&#x2715;'; // ✕ 关闭符号
+            // macOS 下隐藏折叠视图
+            document.body.classList.remove('compact');
+            console.log('[overlay] Set actionBtn to close mode for macOS');
+            
+            // 添加关闭事件
+            actionBtn.addEventListener('click', async (e) => {
+              console.log('[overlay] Close button clicked');
+              e.preventDefault();
+              e.stopPropagation();
+              await closeWindow();
+            });
+          } else {
+            actionBtn.title = '折叠';
+            actionBtn.innerHTML = '&#x229F;'; // ⊟ 折叠符号
+            console.log('[overlay] Set actionBtn to collapse mode');
+            
+            // 添加折叠事件
+            actionBtn.addEventListener('click', async (e) => {
+              console.log('[overlay] Collapse button clicked');
+              e.preventDefault();
+              e.stopPropagation();
+              await toggleMode();
+            });
+          }
+        } else {
+          console.error('[overlay] actionBtn not found!');
+        }
+
+        try {
+          const { getCurrentWebviewWindow } = window.__TAURI__.webviewWindow;
+          const webview = getCurrentWebviewWindow();
+          await webview.emit('overlay_request_pin_state');
+        } catch (e) {
+          console.error('[overlay] Failed to request pin state:', e);
+        }
+
+        // 设置拖动功能
+        setupDragging();
+      });
+
+      /** 设置窗口拖动功能 */
+      function setupDragging() {
+        console.log('[overlay] Setting up dragging...');
+        
+        // 展开模式：整个卡片可拖动（除了按钮和 tabs）
+        const card = document.getElementById('card');
+        if (card) {
+          console.log('[overlay] Card element found, adding drag listener');
+          card.addEventListener('mousedown', async (e) => {
+            // 排除按钮、tab 和双击
+            if (e.target.closest('.mode-btn') || e.target.closest('.tab')) {
+              console.log('[overlay] Click on button or tab, ignoring');
+              return;
+            }
+            if (e.detail === 2) {
+              console.log('[overlay] Double click, ignoring');
+              return;
+            }
+            // 只响应左键
+            if (e.button !== 0) {
+              console.log('[overlay] Not left button, ignoring');
+              return;
+            }
+            console.log('[overlay] Starting drag from card');
+            try {
+              const { getCurrentWebviewWindow } = window.__TAURI__.webviewWindow;
+              const webview = getCurrentWebviewWindow();
+              await webview.startDragging();
+            } catch (e) {
+              console.error('[overlay] startDragging error:', e);
+            }
+          });
+        } else {
+          console.error('[overlay] Card element not found!');
+        }
+
+        // 折叠模式：整个小块可拖动（除了按钮和 provider 切换）
+        const compactView = document.getElementById('compactView');
+        if (compactView) {
+          console.log('[overlay] CompactView element found, adding drag listener');
+          compactView.addEventListener('mousedown', async (e) => {
+            console.log('[overlay] CompactView mousedown, target:', e.target.className);
+            // 排除按钮和 provider 切换
+            if (e.target.closest('.mode-btn') || e.target.closest('.compact-provider')) {
+              console.log('[overlay] Click on button or provider, ignoring');
+              return;
+            }
+            // 排除双击事件（用于展开）
+            if (e.detail === 2) {
+              console.log('[overlay] Double click, ignoring');
+              return;
+            }
+            // 只响应左键
+            if (e.button !== 0) {
+              console.log('[overlay] Not left button, ignoring');
+              return;
+            }
+            console.log('[overlay] Starting drag from compactView');
+            try {
+              const { getCurrentWebviewWindow } = window.__TAURI__.webviewWindow;
+              const webview = getCurrentWebviewWindow();
+              await webview.startDragging();
+              console.log('[overlay] Drag started successfully');
+            } catch (e) {
+              console.error('[overlay] startDragging error:', e);
+            }
+          });
+        } else {
+          console.error('[overlay] CompactView element not found!');
+        }
+      }
+
+      // ── 工具 ─────────────────────────────────────────────────────────────────
+      function formatNum(n) {
+        const num = Number(n);
+        if (isNaN(num)) return String(n ?? '--');
+        if (num >= 10000) return (num / 10000).toFixed(1) + 'w';
+        return String(num);
+      }
+
+      function escHtml(str) {
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+    </script>
+  </body>
+</html>

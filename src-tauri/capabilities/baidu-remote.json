@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "baidu-remote-capability",
+  "description": "允许百度千帆控制台域名的 WebView 访问 Tauri IPC",
+  "windows": ["provider_baidu"],
+  "remote": {
+    "urls": [
+      "https://*.bce.baidu.com",
+      "https://bce.baidu.com",
+      "https://*.baidu.com",
+      "https://baidu.com"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "core:window:default"
+  ]
+}

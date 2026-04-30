@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "aliyun-remote-capability",
+  "description": "允许阿里云 / 百炼控制台域名的 WebView 访问 Tauri IPC",
+  "windows": ["provider_aliyun"],
+  "remote": {
+    "urls": [
+      "https://*.aliyun.com",
+      "https://aliyun.com",
+      "https://*.console.aliyun.com",
+      "https://bailian.console.aliyun.com"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "core:window:default"
+  ]
+}

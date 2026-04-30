@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 服务连接管理</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* html/body 모式：用 100% 而非 100vh，避免 WebView2 首次渲染时 vh 计算为 0 导致 overflow:hidden 裁掉全部内容 */
+    html {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 18px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 440px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .header {
+      text-align: center;
+      margin-bottom: 12px;
+      position: relative;
+    }
+
+    .header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #e6edf3;
+      margin-bottom: 3px;
+    }
+
+    .header p {
+      font-size: 11px;
+      color: #8b949e;
+    }
+
+    .settings-btn {
+      position: absolute;
+      top: 0;
+      right: 0;
+      background: transparent;
+      border: none;
+      padding: 4px;
+      font-size: 16px;
+      cursor: pointer;
+      color: #8b949e;
+      transition: all 0.15s;
+      line-height: 1;
+    }
+
+    .settings-btn:hover {
+      color: #c9d1d9;
+      transform: rotate(30deg);
+    }
+
+    /* ── Provider card ── */
+    .provider-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      transition: border-color 0.2s ease;
+    }
+
+    .provider-card:last-of-type { margin-bottom: 0; }
+    .provider-card:hover { border-color: #484f58; }
+    .provider-card.state-connected { border-color: #2ea043; }
+
+    /* ── Card top row ── */
+    .card-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .status-dot {
+      flex-shrink: 0;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      transition: background 0.3s;
+    }
+
+    .status-dot.dot-disconnected { background: #484f58; }
+    .status-dot.dot-connecting   { background: #d29922; animation: dot-pulse 1.2s ease-in-out infinite; }
+    .status-dot.dot-connected    { background: #3fb950; }
+
+    @keyframes dot-pulse {
+      0%, 100% { opacity: 1;   transform: scale(1);   }
+      50%       { opacity: 0.4; transform: scale(0.75); }
+    }
+
+    .provider-info { flex: 1; min-width: 0; }
+
+    .provider-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e6edf3;
+      margin-bottom: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .provider-desc {
+      font-size: 10px;
+      color: #8b949e;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Card bottom row ── */
+    .card-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .status-label {
+      font-size: 11px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .status-label.label-disconnected { color: #8b949e; }
+    .status-label.label-connecting   { color: #d29922; }
+    .status-label.label-connected    { color: #3fb950; }
+
+    .btn-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px 12px;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      border: 1px solid transparent;
+      outline: none;
+      line-height: 1.4;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+
+    .btn-primary  { background: #238636; color: #fff; border-color: #2ea043; }
+    .btn-primary:not(:disabled):hover  { background: #2ea043; border-color: #3fb950; }
+    .btn-primary:not(:disabled):active { background: #196c2e; }
+
+    .btn-secondary  { background: transparent; color: #8b949e; border-color: #30363d; }
+    .btn-secondary:not(:disabled):hover  { background: #21262d; color: #c9d1d9; border-color: #484f58; }
+    .btn-secondary:not(:disabled):active { background: #161b22; }
+
+    /* ── Footer ── */
+    .footer {
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    .footer p {
+      font-size: 10px;
+      color: #484f58;
+      line-height: 1.5;
+    }
+
+    /* ── 配置页面 ── */
+    .settings-page {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #0d1117;
+      z-index: 100;
+      padding: 14px 18px;
+      overflow-y: auto;
+    }
+
+    .settings-page.active {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .settings-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #e6edf3;
+    }
+
+    .close-btn {
+      background: transparent;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      color: #8b949e;
+      transition: all 0.15s;
+    }
+
+    .close-btn:hover {
+      background: #21262d;
+      color: #c9d1d9;
+      border-color: #484f58;
+    }
+
+    .settings-content {
+      flex: 1;
+    }
+
+    .settings-section {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+
+    .settings-section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e6edf3;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .settings-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .settings-label {
+      font-size: 11px;
+      color: #8b949e;
+      flex-shrink: 0;
+      min-width: 90px;
+    }
+
+    .settings-input {
+      flex: 1;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      padding: 5px 10px;
+      font-size: 11px;
+      color: #e6edf3;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .settings-input:focus {
+      border-color: #58a6ff;
+    }
+
+    .settings-input::-webkit-inner-spin-button,
+    .settings-input::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .settings-unit {
+      font-size: 11px;
+      color: #8b949e;
+      flex-shrink: 0;
+    }
+
+    .settings-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding-top: 12px;
+      border-top: 1px solid #30363d;
+    }
+
+    .btn-save {
+      background: #238636;
+      color: #fff;
+      border: 1px solid #2ea043;
+    }
+
+    .btn-save:hover {
+      background: #2ea043;
+      border-color: #3fb950;
+    }
+
+    .btn-cancel {
+      background: transparent;
+      color: #8b949e;
+      border: 1px solid #30363d;
+    }
+
+    .btn-cancel:hover {
+      background: #21262d;
+      color: #c9d1d9;
+      border-color: #484f58;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="header">
+      <button class="settings-btn" id="settings-btn" title="设置">⚙️</button>
+      <h1>🔗 AI 服务连接</h1>
+      <p>管理您的 AI 服务提供商登录状态</p>
+    </div>
+
+    <div id="provider-list"></div>
+
+    <div class="footer">
+      <p>登录成功后此窗口自动收起，可通过系统托盘重新打开</p>
+    </div>
+
+  </div>
+
+  <!-- 配置页面 -->
+  <div class="settings-page" id="settings-page">
+    <div class="settings-header">
+      <div class="settings-title">⚙️ 设置</div>
+      <button class="close-btn" id="close-settings-btn">关闭</button>
+    </div>
+
+    <div class="settings-content">
+      <div class="settings-section">
+        <div class="settings-section-title">⏱️ 刷新间隔</div>
+        <div class="settings-row">
+          <span class="settings-label">数据刷新间隔：</span>
+          <input type="number" id="refresh-interval" class="settings-input" min="10" max="600" value="60" />
+          <span class="settings-unit">秒</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label"></span>
+          <span style="font-size: 10px; color: #6e7681;">范围：10-600秒，默认60秒</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-footer">
+      <button class="btn btn-cancel" id="cancel-settings-btn">取消</button>
+      <button class="btn btn-save" id="save-settings-btn">保存</button>
+    </div>
+  </div>
+
+  <script>
+    var PROVIDERS = [
+      { id: 'aliyun', name: '阿里云百炼', desc: '百炼控制台 · 资源包 & 用量监控' },
+      { id: 'baidu',  name: '百度千帆',   desc: '千帆控制台 · 订阅资源监控'      }
+    ];
+
+    var providerState = {};
+    PROVIDERS.forEach(function (p) { providerState[p.id] = 'disconnected'; });
+    var hideScheduled = false;
+
+    function tauriInvoke(cmd, args) {
+      console.log('[control] 调用 Tauri 命令:', cmd, args);
+      try {
+        var t = window.__TAURI__;
+        if (t && t.core && typeof t.core.invoke === 'function') {
+          var promise = t.core.invoke(cmd, args);
+          promise.then(function(result) {
+            console.log('[control] 命令成功:', cmd, result);
+          }).catch(function(err) {
+            console.error('[control] 命令失败:', cmd, err);
+          });
+          return promise;
+        } else {
+          console.error('[control] Tauri API 不可用');
+        }
+      } catch (e) { 
+        console.error('[control] 调用异常:', e); 
+      }
+      return Promise.resolve(null);
+    }
+
+    function render() {
+      var list = document.getElementById('provider-list');
+      list.innerHTML = '';
+
+      PROVIDERS.forEach(function (p) {
+        var status = providerState[p.id];
+        var isConn = status === 'connected';
+
+        var labelClass, labelIcon, labelText;
+        if (status === 'connected') {
+          labelClass = 'label-connected'; labelIcon = '✓'; labelText = '已连接';
+        } else if (status === 'connecting') {
+          labelClass = 'label-connecting'; labelIcon = '◌'; labelText = '连接中';
+        } else {
+          labelClass = 'label-disconnected'; labelIcon = '○'; labelText = '未连接';
+        }
+
+        var btns;
+        if (status === 'disconnected') {
+          btns = '<button class="btn btn-primary" data-action="connect" data-id="' + p.id + '">连接</button>';
+        } else if (status === 'connecting') {
+          btns = '<button class="btn btn-primary" disabled>连接中…</button>';
+        } else {
+          btns = '<button class="btn btn-secondary" data-action="reconnect" data-id="' + p.id + '">重新登录</button>';
+        }
+
+        var card = document.createElement('div');
+        card.className = 'provider-card' + (isConn ? ' state-connected' : '');
+        card.innerHTML =
+          '<div class="card-top">' +
+            '<div class="status-dot dot-' + status + '"></div>' +
+            '<div class="provider-info">' +
+              '<div class="provider-name">' + esc(p.name) + '</div>' +
+              '<div class="provider-desc">'  + esc(p.desc) + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="card-bottom">' +
+            '<span class="status-label ' + labelClass + '">' + labelIcon + ' ' + esc(labelText) + '</span>' +
+            '<div class="btn-group">' + btns + '</div>' +
+          '</div>';
+
+        list.appendChild(card);
+      });
+
+      list.querySelectorAll('[data-action]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          console.log('[control] 按钮被点击');
+          var action = btn.getAttribute('data-action');
+          var id     = btn.getAttribute('data-id');
+          console.log('[control] action:', action, 'id:', id);
+          if (action === 'connect')   connectProvider(id);
+          if (action === 'reconnect') reconnectProvider(id);
+        });
+      });
+    }
+
+    function connectProvider(id) {
+      console.log('[control] connectProvider 被调用:', id);
+      if (providerState[id] === 'connecting') {
+        console.log('[control] 已经在连接中，跳过');
+        return;
+      }
+      providerState[id] = 'connecting';
+      render();
+      console.log('[control] 开始调用 connect_provider');
+      
+      // 使用当前保存的刷新间隔
+      tauriInvoke('connect_provider', { providerId: id, refreshInterval: currentRefreshInterval })
+        .catch(function (err) {
+          console.error('[control] connect_provider failed:', err);
+          providerState[id] = 'disconnected';
+          render();
+        });
+    }
+
+    function reconnectProvider(id) {
+      providerState[id] = 'disconnected';
+      render();
+      connectProvider(id);
+    }
+
+    window.__onProviderStatus = function (id, status) {
+      console.log('[control] __onProviderStatus 被调用:', id, status);
+      if (!(id in providerState)) {
+        console.warn('[control] 未知的 provider_id:', id);
+        return;
+      }
+      providerState[id] = status;
+      // 有任何 provider 断开时重置自动隐藏标志，确保重新连接后仍可自动收起
+      if (status === 'disconnected') hideScheduled = false;
+      render();
+      checkAllConnected();
+    };
+
+    function checkAllConnected() {
+      if (hideScheduled) return;
+      var allDone = PROVIDERS.every(function (p) { return providerState[p.id] === 'connected'; });
+      if (allDone) {
+        hideScheduled = true;
+        setTimeout(function () {
+          tauriInvoke('hide_control_panel').catch(function (e) { console.error(e); });
+        }, 1500);
+      }
+    }
+
+    function esc(str) {
+      return String(str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    console.log('[control] 页面加载完成，初始化');
+    console.log('[control] Tauri API 状态:', window.__TAURI__ ? '可用' : '不可用');
+    render();
+    
+    // 配置管理
+    var currentRefreshInterval = 60; // 当前生效的刷新间隔
+    var refreshInput = document.getElementById('refresh-interval');
+    var settingsPage = document.getElementById('settings-page');
+    var settingsBtn = document.getElementById('settings-btn');
+    var closeSettingsBtn = document.getElementById('close-settings-btn');
+    var cancelSettingsBtn = document.getElementById('cancel-settings-btn');
+    var saveSettingsBtn = document.getElementById('save-settings-btn');
+    
+    // 打开设置页面
+    settingsBtn.addEventListener('click', function() {
+      refreshInput.value = currentRefreshInterval;
+      settingsPage.classList.add('active');
+    });
+    
+    // 关闭设置页面
+    function closeSettings() {
+      settingsPage.classList.remove('active');
+    }
+    
+    closeSettingsBtn.addEventListener('click', closeSettings);
+    cancelSettingsBtn.addEventListener('click', closeSettings);
+    
+    // 保存设置
+    saveSettingsBtn.addEventListener('click', function() {
+      var interval = parseInt(refreshInput.value, 10);
+      if (isNaN(interval) || interval < 10) {
+        interval = 10;
+        refreshInput.value = '10';
+      } else if (interval > 600) {
+        interval = 600;
+        refreshInput.value = '600';
+      }
+      
+      currentRefreshInterval = interval;
+      console.log('[control] 保存刷新间隔:', interval, '秒');
+      
+      tauriInvoke('set_refresh_interval', { intervalSeconds: interval })
+        .then(function() {
+          console.log('[control] 刷新间隔设置成功');
+          closeSettings();
+        })
+        .catch(function(err) {
+          console.error('[control] 设置刷新间隔失败:', err);
+          alert('设置失败：' + err);
+        });
+    });
+    
+  </script>
+</body>
+</html>

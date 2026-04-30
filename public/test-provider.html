@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Provider 测试页面</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    .status {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 0.95rem;
+    }
+    .status-item:last-child { margin-bottom: 0; }
+    .label { opacity: 0.8; }
+    .value { font-weight: 600; }
+    .success { color: #4ade80; }
+    .error { color: #f87171; }
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    button {
+      flex: 1;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(255, 255, 255, 0.9);
+      color: #667eea;
+    }
+    button:hover {
+      background: white;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    .log {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 10px;
+      padding: 15px;
+      margin-top: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 0.85rem;
+    }
+    .log-entry {
+      margin-bottom: 5px;
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 Provider 测试页面</h1>
+    
+    <div class="status">
+      <div class="status-item">
+        <span class="label">页面状态:</span>
+        <span class="value success">✓ 已加载</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Tauri API:</span>
+        <span class="value" id="tauri-status">检测中...</span>
+      </div>
+      <div class="status-item">
+        <span class="label">窗口 URL:</span>
+        <span class="value" id="window-url" style="font-size: 0.8rem; word-break: break-all;"></span>
+      </div>
+      <div class="status-item">
+        <span class="label">时间:</span>
+        <span class="value" id="current-time"></span>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button onclick="testEmit()">测试事件发送</button>
+      <button onclick="testLogin()">模拟登录</button>
+      <button onclick="testData()">模拟数据</button>
+    </div>
+
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    console.log('[TestProvider] 页面开始加载');
+
+    const logEl = document.getElementById('log');
+    const tauriStatusEl = document.getElementById('tauri-status');
+    const urlEl = document.getElementById('window-url');
+    const timeEl = document.getElementById('current-time');
+
+    function log(message) {
+      console.log('[TestProvider]', message);
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logEl.appendChild(entry);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function updateTime() {
+      timeEl.textContent = new Date().toLocaleTimeString();
+    }
+
+    // 检查 Tauri API
+    function checkTauriAPI() {
+      if (window.__TAURI__?.event?.emit) {
+        tauriStatusEl.textContent = '✓ 可用';
+        tauriStatusEl.className = 'value success';
+        log('Tauri API 可用');
+        return true;
+      } else {
+        tauriStatusEl.textContent = '✗ 不可用';
+        tauriStatusEl.className = 'value error';
+        log('Tauri API 不可用');
+        return false;
+      }
+    }
+
+    async function testEmit() {
+      log('测试事件发送...');
+      if (!checkTauriAPI()) {
+        log('错误: Tauri API 不可用');
+        return;
+      }
+      try {
+        await window.__TAURI__.event.emit('test_event', { message: 'Hello from test provider' });
+        log('✓ 事件发送成功');
+      } catch (e) {
+        log('✗ 事件发送失败: ' + e.message);
+      }
+    }
+
+    async function testLogin() {
+      log('模拟登录事件...');
+      if (!checkTauriAPI()) {
+        log('错误: Tauri API 不可用');
+        return;
+      }
+      try {
+        await window.__TAURI__.event.emit('provider_login_detected', { 
+          provider_id: 'test' 
+        });
+        log('✓ 登录事件发送成功');
+      } catch (e) {
+        log('✗ 登录事件发送失败: ' + e.message);
+      }
+    }
+
+    async function testData() {
+      log('模拟数据更新事件...');
+      if (!checkTauriAPI()) {
+        log('错误: Tauri API 不可用');
+        return;
+      }
+      try {
+        await window.__TAURI__.event.emit('provider_data_updated', {
+          provider_id: 'test',
+          provider_name: '测试 Provider',
+          items: [
+            { key: '状态', value: '正常', highlight: true },
+            { key: '用量', value: '1234 tokens', highlight: false }
+          ],
+          compact_text: '用量: 1234 tokens'
+        });
+        log('✓ 数据更新事件发送成功');
+      } catch (e) {
+        log('✗ 数据更新事件发送失败: ' + e.message);
+      }
+    }
+
+    // 初始化
+    urlEl.textContent = window.location.href;
+    updateTime();
+    setInterval(updateTime, 1000);
+
+    // 延迟检查 Tauri API（等待注入完成）
+    setTimeout(() => {
+      checkTauriAPI();
+      log('页面初始化完成');
+    }, 100);
+
+    log('脚本加载完成');
+  </script>
+</body>
+</html>
