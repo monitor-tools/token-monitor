@@ -161,6 +161,27 @@ pnpm run tauri build
 
 ## ⚠️ 常见问题
 
+### macOS 安装与打开应用
+
+由于应用未经过 Apple 代码签名，需要按以下步骤安装：
+
+**完整安装步骤：**
+
+1. **下载并打开 DMG 文件** - 双击下载的 `.dmg` 文件
+2. **拖拽安装** - 在弹出的安装窗口中，将应用图标拖拽到 `Applications` 文件夹
+3. **首次打开** - 前往 `Applications` 文件夹，找到应用
+4. **绕过安全检查** - 使用以下任一方法：
+   - **方法一（推荐）**：按住 `Control` 键点击应用 → 选择"打开" → 点击"打开"按钮
+   - **方法二**：右键点击应用 → 选择"打开" → 点击"打开"按钮
+   - **方法三**：在"系统设置" → "隐私与安全性"中找到被阻止的应用，点击"仍要打开"
+   - **方法四**：在终端运行以下命令：
+     ```bash
+     xattr -cr /Applications/lsys-cloud-monitor.app
+     ```
+5. **后续使用** - 完成首次打开后，之后可以正常双击启动
+
+**注意**：直接在 DMG 窗口中打开应用可能会导致权限问题，请务必先拖拽到 Applications 文件夹。
+
 ### WebView2 未安装 (Windows)
 下载并安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
 

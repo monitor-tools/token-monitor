@@ -75,6 +75,16 @@ jobs:
             - **macOS**: `token-monitor_*_universal.dmg` (支持 Intel 和 Apple Silicon)
             - **Windows**: `token-monitor_*_x64-setup.exe`
             
+            ## 🍎 macOS 安装步骤
+            
+            1. 双击打开 `.dmg` 文件
+            2. 将应用图标拖拽到 `Applications` 文件夹
+            3. 前往 `Applications` 文件夹，找到应用
+            4. **首次打开**：按住 `Control` 键点击应用 → 选择"打开" → 点击"打开"
+            5. 后续可正常双击启动
+            
+            > ⚠️ 由于应用未签名，直接双击会被 macOS 阻止，请使用上述方法首次打开
+            
             ## ✨ 更新内容
             
             查看完整更新日志请访问提交记录。
