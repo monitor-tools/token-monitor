@@ -21,8 +21,8 @@ pub fn create_control_panel(handle: &AppHandle) -> tauri::Result<()> {
         WebviewUrl::App("control.html".into()),
     )
     .title("云服务监控")
-    .inner_size(460.0, 320.0)
-    .min_inner_size(380.0, 260.0)
+    .inner_size(460.0, 395.0)
+    .min_inner_size(380.0, 335.0)
     .resizable(true)
     .center()
     .build()?;
