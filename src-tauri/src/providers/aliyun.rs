@@ -143,8 +143,46 @@ fn injection_script() -> String {
         return { provider_id: PROVIDER_ID, provider_name: PROVIDER_NAME, items, quota_groups, compact_text };
     }
 
+    // ── 页面刷新 ──────────────────────────────────────────────────────────────
+    // 查找并点击阿里云刷新按钮
+
+    function triggerPageRefresh() {
+        console.log('[Aliyun] 尝试触发页面刷新');
+        
+        try {
+            const sparkIcons = document.querySelectorAll('.spark-icon-spark-refresh-line');
+            if (sparkIcons.length === 0) {
+                console.log('[Aliyun] 未找到刷新按钮 (.spark-icon-spark-refresh-line)');
+                return false;
+            }
+            
+            console.log('[Aliyun] 找到', sparkIcons.length, '个刷新按钮');
+            let clickedCount = 0;
+            
+            sparkIcons.forEach((icon, index) => {
+                const clickable = icon.closest('button, span[role="button"], a, [onclick]');
+                if (clickable) {
+                    console.log('[Aliyun] 点击第', index + 1, '个刷新按钮');
+                    clickable.click();
+                    clickedCount++;
+                } else if (icon.onclick || icon.getAttribute('onclick')) {
+                    console.log('[Aliyun] 直接点击第', index + 1, '个刷新图标');
+                    icon.click();
+                    clickedCount++;
+                }
+            });
+            
+            console.log('[Aliyun] 共点击了', clickedCount, '个刷新按钮');
+            return clickedCount > 0;
+        } catch (e) {
+            console.error('[Aliyun] 刷新按钮点击失败:', e);
+            return false;
+        }
+    }
+
     // ── 数据拉取 ─────────────────────────────────────────────────────────────────
     // 仅在 URL 包含 bailian.console.aliyun.com 时执行 DOM 抓取。
+    // 每次拉取数据前先触发页面刷新，然后等待页面更新后提取数据。
     // 成功推送后才更新 lastFetchAt；未取到数据时保持原値 → tick 每 2s 重试直到成功。
 
     function fetchData() {
@@ -154,6 +192,18 @@ fn injection_script() -> String {
             console.log('[Aliyun] URL 不匹配，跳过数据提取');
             return;
         }
+        
+        // 每次拉取数据前先触发页面刷新
+        triggerPageRefresh();
+        
+        // 触发刷新后等待 5 秒让页面更新
+        setTimeout(() => {
+            console.log('[Aliyun] 刷新后延迟提取数据');
+            extractAndSendData();
+        }, 5000);
+    }
+    
+    function extractAndSendData() {
         const info = extractPlanInfo();
         if (!info) {
             console.log('[Aliyun] 未提取到数据，等待重试');
