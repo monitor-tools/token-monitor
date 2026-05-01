@@ -1,7 +1,7 @@
 [package]
 name = "token-monitor"
 version = "1.0.0"
-description = "云服务订阅监控桌面应用 - 支持多平台、多服务商"
+description = "Code Plan 套餐余量监控桌面小应用 - 支持多平台、多服务商"
 authors = ["lsys"]
 edition = "2021"
 

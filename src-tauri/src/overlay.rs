@@ -39,7 +39,7 @@ pub fn create_overlay(handle: &AppHandle) -> tauri::Result<tauri::WebviewWindow>
         "overlay",
         WebviewUrl::App("overlay.html".into()),
     )
-    .title("云服务监控")
+    .title("Code Plan 套餐余量监控")
     .inner_size(EXPANDED_W as f64, EXPANDED_H as f64) // macOS 使用逻辑尺寸
     .min_inner_size(COMPACT_W as f64, COMPACT_H as f64)
     .maximizable(false)
@@ -58,7 +58,7 @@ pub fn create_overlay(handle: &AppHandle) -> tauri::Result<tauri::WebviewWindow>
         "overlay",
         WebviewUrl::App("overlay.html".into()),
     )
-    .title("云服务监控")
+    .title("Code Plan 套餐余量监控")
     .inner_size(EXPANDED_W as f64, EXPANDED_H as f64)
     .min_inner_size(COMPACT_W as f64, COMPACT_H as f64)
     .maximizable(false)
