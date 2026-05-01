@@ -511,12 +511,12 @@
         <div class="settings-section-title">⏱️ 刷新间隔</div>
         <div class="settings-row">
           <span class="settings-label">数据刷新间隔：</span>
-          <input type="number" id="refresh-interval" class="settings-input" min="10" max="600" value="60" />
+          <input type="number" id="refresh-interval" class="settings-input" min="60" max="600" value="60" />
           <span class="settings-unit">秒</span>
         </div>
         <div class="settings-row">
           <span class="settings-label"></span>
-          <span style="font-size: 10px; color: #6e7681;">范围：10-600秒，默认60秒</span>
+          <span style="font-size: 10px; color: #6e7681;">范围：60-600秒，默认60秒</span>
         </div>
       </div>
     </div>
@@ -799,9 +799,9 @@
     // 保存设置
     saveSettingsBtn.addEventListener('click', function() {
       var interval = parseInt(refreshInput.value, 10);
-      if (isNaN(interval) || interval < 10) {
-        interval = 10;
-        refreshInput.value = '10';
+      if (isNaN(interval) || interval < 60) {
+        interval = 60;
+        refreshInput.value = '60';
       } else if (interval > 600) {
         interval = 600;
         refreshInput.value = '600';
