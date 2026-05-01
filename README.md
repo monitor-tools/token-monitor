@@ -87,7 +87,7 @@ sudo apt install libwebkit2gtk-4.1-dev \
 ```bash
 # 1. 克隆项目
 git clone <repository-url>
-cd lsys-cloud-monitor
+cd token-monitor
 
 # 2. 安装依赖
 pnpm install
@@ -191,7 +191,7 @@ pnpm run tauri build
    - **方法三**：在"系统设置" → "隐私与安全性"中找到被阻止的应用，点击"仍要打开"
    - **方法四**：在终端运行以下命令：
      ```bash
-     xattr -cr /Applications/lsys-cloud-monitor.app
+     xattr -cr /Applications/token-monitor.app
      ```
 5. **后续使用** - 完成首次打开后，之后可以正常双击启动
 

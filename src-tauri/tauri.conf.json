@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "lsys-cloud-monitor",
+  "productName": "token-monitor",
   "version": "1.0.0",
-  "identifier": "com.lsys.cloud-monitor",
+  "identifier": "com.lsys.token-monitor",
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
