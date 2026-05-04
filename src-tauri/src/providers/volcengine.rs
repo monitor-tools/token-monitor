@@ -180,13 +180,17 @@ fn injection_script() -> String {
                 items.push({ key: '统计时间', value: formatTimestamp(usageInfo.UpdateTimestamp), highlight: false });
             }
 
+            console.log('[Volcengine] QuotaUsage 数组:', JSON.stringify(usageInfo.QuotaUsage));
+
             for (const q of usageInfo.QuotaUsage) {
+                console.log('[Volcengine] 处理配额项:', JSON.stringify(q));
                 let label = '';
                 let highlightThreshold = 1;
 
                 if (q.Level === 'session') {
-                    label = '会话';
+                    label = '近5小时';
                     highlightThreshold = 0.8;
+                    console.log('[Volcengine] 找到 session 级别，标签设为: 近5小时');
                 } else if (q.Level === 'weekly') {
                     label = '近一周';
                     highlightThreshold = 0.8;
@@ -195,6 +199,7 @@ fn injection_script() -> String {
                     highlightThreshold = 0.8;
                 } else {
                     label = q.Level || '未知';
+                    console.log('[Volcengine] 未知级别:', q.Level);
                 }
 
                 // API 返回的 Percent 已是百分比值（如 85.5 表示 85.5%），需除以 100 归一化为小数
@@ -203,27 +208,39 @@ fn injection_script() -> String {
                     ? '重置: ' + formatTimestamp(q.ResetTimestamp)
                     : '';
 
-                quota_groups.push({
+                const quotaItem = {
                     label: label,
                     used:  formatPercent(percent),
                     limit: 0,
                     remain: resetText,
                     highlight: percent >= highlightThreshold,
-                });
+                };
+                console.log('[Volcengine] 添加配额项:', JSON.stringify(quotaItem));
+                quota_groups.push(quotaItem);
             }
         }
 
         // ── 折叠摘要 ──
         let compact_text = '火山引擎方舟';
         if (usageInfo && usageInfo.QuotaUsage) {
+            console.log('[Volcengine] 构建 compact_text，QuotaUsage 长度:', usageInfo.QuotaUsage.length);
+            // 优先显示5小时用量（session），其次显示周用量
+            const session = usageInfo.QuotaUsage.find(q => q.Level === 'session');
             const weekly = usageInfo.QuotaUsage.find(q => q.Level === 'weekly');
-            if (weekly) {
+            console.log('[Volcengine] session 数据:', session ? JSON.stringify(session) : 'null');
+            console.log('[Volcengine] weekly 数据:', weekly ? JSON.stringify(weekly) : 'null');
+            if (session) {
+                compact_text = '5h用量：' + formatPercent(session.Percent / 100);
+                console.log('[Volcengine] compact_text 设为:', compact_text);
+            } else if (weekly) {
                 compact_text = '周用量：' + formatPercent(weekly.Percent / 100);
+                console.log('[Volcengine] compact_text 设为:', compact_text);
             }
         }
         if (tradeInfo && tradeInfo.Status && tradeInfo.Status !== 'Running') {
             compact_text = '状态：' + statusToText(tradeInfo.Status);
         }
+        console.log('[Volcengine] 最终 compact_text:', compact_text);
 
         return {
             provider_id:   PROVIDER_ID,

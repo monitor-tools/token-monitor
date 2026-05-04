@@ -177,11 +177,12 @@ fn update_tray_title(tray: &tauri::tray::TrayIcon<Wry>, data: &serde_json::Value
     // 查找 quota_groups 中的第一个配额组（通常是"近5小时"）
     if let Some(quota_groups) = data.get("quota_groups").and_then(|v| v.as_array()) {
         if let Some(first_quota) = quota_groups.first() {
-            let remain = first_quota.get("remain").and_then(|v| v.as_u64()).unwrap_or(0);
             let limit = first_quota.get("limit").and_then(|v| v.as_u64()).unwrap_or(0);
             
-            // 如果有限额，显示剩余量
+            // 情况1：有具体的 token 限额（百度、阿里云）
             if limit > 0 {
+                let remain = first_quota.get("remain").and_then(|v| v.as_u64()).unwrap_or(0);
+                
                 // 格式化剩余量，如果超过 10000 则显示为 k 单位
                 let remain_str = if remain >= 10000 {
                     format!("{}k", remain / 1000)
@@ -197,6 +198,23 @@ fn update_tray_title(tray: &tauri::tray::TrayIcon<Wry>, data: &serde_json::Value
                 let _ = tray.set_title(Some(&title));
                 eprintln!("[tray] Updated title to: {} (subscript)", remain_str);
                 return;
+            }
+            
+            // 情况2：只有百分比数据（火山引擎）
+            if let Some(used_str) = first_quota.get("used").and_then(|v| v.as_str()) {
+                // used 是百分比字符串，如 "85.5%"
+                // 提取数字部分，四舍五入取整
+                let percent_str = used_str.trim_end_matches('%');
+                if let Ok(percent_float) = percent_str.parse::<f64>() {
+                    let percent_int = percent_float.round() as i32;
+                    let subscript_str = to_subscript(&percent_int.to_string());
+                    
+                    // 只显示整数，不加百分号
+                    let title = format!(" {}", subscript_str);
+                    let _ = tray.set_title(Some(&title));
+                    eprintln!("[tray] Updated title to: {}% (rounded to integer)", percent_int);
+                    return;
+                }
             }
         }
     }
