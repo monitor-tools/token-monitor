@@ -197,7 +197,8 @@ fn injection_script() -> String {
                     label = q.Level || '未知';
                 }
 
-                const percent = typeof q.Percent === 'number' ? q.Percent : 0;
+                // API 返回的 Percent 已是百分比值（如 85.5 表示 85.5%），需除以 100 归一化为小数
+                const percent = typeof q.Percent === 'number' ? q.Percent / 100 : 0;
                 const resetText = q.ResetTimestamp > 0
                     ? '重置: ' + formatTimestamp(q.ResetTimestamp)
                     : '';
@@ -217,7 +218,7 @@ fn injection_script() -> String {
         if (usageInfo && usageInfo.QuotaUsage) {
             const weekly = usageInfo.QuotaUsage.find(q => q.Level === 'weekly');
             if (weekly) {
-                compact_text = '周用量：' + formatPercent(weekly.Percent);
+                compact_text = '周用量：' + formatPercent(weekly.Percent / 100);
             }
         }
         if (tradeInfo && tradeInfo.Status && tradeInfo.Status !== 'Running') {
