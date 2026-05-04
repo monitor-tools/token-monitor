@@ -1,11 +1,18 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Code Plan 套餐余量管理</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
     /* html/body 模式：用 100% 而非 100vh，避免 WebView2 首次渲染时 vh 计算为 0 导致 overflow:hidden 裁掉全部内容 */
     html {
@@ -30,7 +37,7 @@
 
     .container {
       width: 100%;
-      max-width: 440px;
+      max-width: 600px;
       display: flex;
       flex-direction: column;
     }
@@ -73,85 +80,119 @@
       transform: rotate(30deg);
     }
 
+    /* ── Provider list (3 cards in one row) ── */
+    #provider-list {
+      display: flex;
+      flex-direction: row;
+      gap: 8px;
+    }
+
     /* ── Provider card ── */
     .provider-card {
+      flex: 1;
+      min-width: 0;
       background: #161b22;
       border: 1px solid #30363d;
       border-radius: 8px;
-      padding: 8px 12px;
-      margin-bottom: 8px;
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 6px;
       transition: border-color 0.2s ease;
     }
 
-    .provider-card:last-of-type { margin-bottom: 0; }
-    .provider-card:hover { border-color: #484f58; }
-    .provider-card.state-connected { border-color: #2ea043; }
-
-    /* ── Card top row ── */
-    .card-top {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 6px;
+    .provider-card:hover {
+      border-color: #484f58;
     }
 
-    .status-dot {
-      flex-shrink: 0;
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      transition: background 0.3s;
+    .provider-card.state-connected {
+      border-color: #2ea043;
     }
 
-    .status-dot.dot-disconnected { background: #484f58; }
-    .status-dot.dot-connecting   { background: #d29922; animation: dot-pulse 1.2s ease-in-out infinite; }
-    .status-dot.dot-connected    { background: #3fb950; }
-
-    @keyframes dot-pulse {
-      0%, 100% { opacity: 1;   transform: scale(1);   }
-      50%       { opacity: 0.4; transform: scale(0.75); }
-    }
-
-    .provider-info { flex: 1; min-width: 0; }
-
+    /* ── Provider info ── */
     .provider-name {
       font-size: 13px;
       font-weight: 600;
       color: #e6edf3;
-      margin-bottom: 1px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      line-height: 1.3;
     }
 
     .provider-desc {
       font-size: 10px;
       color: #8b949e;
-      white-space: nowrap;
+      line-height: 1.4;
+      /* 最多显示两行 */
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       overflow: hidden;
-      text-overflow: ellipsis;
     }
 
-    /* ── Card bottom row ── */
-    .card-bottom {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-    }
-
+    /* ── Status label (with inline dot) ── */
     .status-label {
       font-size: 11px;
       font-weight: 500;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 4px;
+      margin-top: auto;
     }
 
-    .status-label.label-disconnected { color: #8b949e; }
-    .status-label.label-connecting   { color: #d29922; }
-    .status-label.label-connected    { color: #3fb950; }
+    .status-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
 
-    .btn-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .status-dot.dot-disconnected {
+      background: #484f58;
+    }
+
+    .status-dot.dot-connecting {
+      background: #d29922;
+      animation: dot-pulse 1.2s ease-in-out infinite;
+    }
+
+    .status-dot.dot-connected {
+      background: #3fb950;
+    }
+
+    @keyframes dot-pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.4;
+        transform: scale(0.75);
+      }
+    }
+
+    .status-label.label-disconnected {
+      color: #8b949e;
+    }
+
+    .status-label.label-connecting {
+      color: #d29922;
+    }
+
+    .status-label.label-connected {
+      color: #3fb950;
+    }
+
+    /* ── Button group ── */
+    .btn-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
 
     .btn {
       display: inline-flex;
@@ -170,15 +211,42 @@
       white-space: nowrap;
     }
 
-    .btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
 
-    .btn-primary  { background: #238636; color: #fff; border-color: #2ea043; }
-    .btn-primary:not(:disabled):hover  { background: #2ea043; border-color: #3fb950; }
-    .btn-primary:not(:disabled):active { background: #196c2e; }
+    .btn-primary {
+      background: #238636;
+      color: #fff;
+      border-color: #2ea043;
+    }
 
-    .btn-secondary  { background: transparent; color: #8b949e; border-color: #30363d; }
-    .btn-secondary:not(:disabled):hover  { background: #21262d; color: #c9d1d9; border-color: #484f58; }
-    .btn-secondary:not(:disabled):active { background: #161b22; }
+    .btn-primary:not(:disabled):hover {
+      background: #2ea043;
+      border-color: #3fb950;
+    }
+
+    .btn-primary:not(:disabled):active {
+      background: #196c2e;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: #8b949e;
+      border-color: #30363d;
+    }
+
+    .btn-secondary:not(:disabled):hover {
+      background: #21262d;
+      color: #c9d1d9;
+      border-color: #484f58;
+    }
+
+    .btn-secondary:not(:disabled):active {
+      background: #161b22;
+    }
 
     /* ── Footer ── */
     .footer {
@@ -453,6 +521,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="container">
 
@@ -483,12 +552,12 @@
     <div class="confirm-dialog">
       <div class="confirm-dialog-title">⚠️ 授权确认</div>
       <div class="confirm-dialog-content">
-        <p>连接到云服务商控制台需要注入一段 JavaScript 代码，用于定时获取您的套餐余量信息。</p>
+        <p>连接到云服务商控制台需要添加一段 JavaScript 代码，用于定时获取您的套餐余量信息。</p>
         <div class="confirm-dialog-highlight">
-          <strong>注入代码的作用：</strong><br>
-          • 定时读取控制台页面中的套餐余量数据<br>
-          • 将数据发送到本地悬浮窗进行展示<br>
-          • 不会获敏感数据，数据仅用在本地处理，不会上传任何服务器
+          <strong>添加代码的作用：</strong><br>
+          • 定时读取控制台页面中的套餐余量数据，并在悬浮窗中进行展示<br>
+          • 不会尝试获取任何敏感数据，获取套餐数据仅用于本地显示<br>
+          • 你可以阅读项目源码，以了解添加代码的详细内容
         </div>
         <p>是否同意授权继续连接？</p>
       </div>
@@ -529,20 +598,21 @@
 
   <script>
     var PROVIDERS = [
-      { id: 'aliyun', name: '阿里云百炼', desc: '百炼控制台 · 资源包 & 用量监控' },
-      { id: 'baidu',  name: '百度千帆',   desc: '千帆控制台 · 订阅资源监控'      }
+      { id: 'aliyun', name: '阿里云百炼', desc: '资源包 & 用量监控' },
+      { id: 'baidu', name: '百度千帆', desc: '订阅资源监控' },
+      { id: 'volcengine', name: '火山引擎方舟', desc: '订阅套餐 & 用量监控' }
     ];
 
     var providerState = {};
     PROVIDERS.forEach(function (p) { providerState[p.id] = 'disconnected'; });
     var hideScheduled = false;
-    
+
     // 配置管理 - 提前定义，供 connectProvider 使用
     var currentRefreshInterval = 60; // 当前生效的刷新间隔
-    
+
     // 确认对话框管理 - 提前定义，供 connectProvider 使用
     var confirmCallback = null;
-    
+
     function showConfirmDialog(callback) {
       console.log('[control] showConfirmDialog 被调用');
       var confirmDialogOverlay = document.getElementById('confirm-dialog-overlay');
@@ -556,7 +626,7 @@
       confirmDialogOverlay.classList.add('active');
       console.log('[control] 确认对话框已显示');
     }
-    
+
     function hideConfirmDialog() {
       console.log('[control] hideConfirmDialog 被调用');
       var confirmDialogOverlay = document.getElementById('confirm-dialog-overlay');
@@ -572,17 +642,17 @@
         var t = window.__TAURI__;
         if (t && t.core && typeof t.core.invoke === 'function') {
           var promise = t.core.invoke(cmd, args);
-          promise.then(function(result) {
+          promise.then(function (result) {
             console.log('[control] 命令成功:', cmd, result);
-          }).catch(function(err) {
+          }).catch(function (err) {
             console.error('[control] 命令失败:', cmd, err);
           });
           return promise;
         } else {
           console.error('[control] Tauri API 不可用');
         }
-      } catch (e) { 
-        console.error('[control] 调用异常:', e); 
+      } catch (e) {
+        console.error('[control] 调用异常:', e);
       }
       return Promise.resolve(null);
     }
@@ -616,17 +686,13 @@
         var card = document.createElement('div');
         card.className = 'provider-card' + (isConn ? ' state-connected' : '');
         card.innerHTML =
-          '<div class="card-top">' +
-            '<div class="status-dot dot-' + status + '"></div>' +
-            '<div class="provider-info">' +
-              '<div class="provider-name">' + esc(p.name) + '</div>' +
-              '<div class="provider-desc">'  + esc(p.desc) + '</div>' +
-            '</div>' +
-          '</div>' +
-          '<div class="card-bottom">' +
-            '<span class="status-label ' + labelClass + '">' + labelIcon + ' ' + esc(labelText) + '</span>' +
-            '<div class="btn-group">' + btns + '</div>' +
-          '</div>';
+          '<div class="provider-name">' + esc(p.name) + '</div>' +
+          '<div class="provider-desc">' + esc(p.desc) + '</div>' +
+          '<span class="status-label ' + labelClass + '">' +
+          '<span class="status-dot dot-' + status + '"></span>' +
+          esc(labelText) +
+          '</span>' +
+          '<div class="btn-group">' + btns + '</div>';
 
         list.appendChild(card);
       });
@@ -635,9 +701,9 @@
         btn.addEventListener('click', function () {
           console.log('[control] 按钮被点击');
           var action = btn.getAttribute('data-action');
-          var id     = btn.getAttribute('data-id');
+          var id = btn.getAttribute('data-id');
           console.log('[control] action:', action, 'id:', id);
-          if (action === 'connect')   connectProvider(id);
+          if (action === 'connect') connectProvider(id);
           if (action === 'reconnect') reconnectProvider(id);
         });
       });
@@ -648,33 +714,33 @@
       console.log('[control] connectProvider 被调用:', id);
       console.log('[control] 当前状态:', providerState[id]);
       console.log('[control] currentRefreshInterval:', currentRefreshInterval);
-      
+
       if (providerState[id] === 'connecting') {
         console.log('[control] 已经在连接中，跳过');
         return;
       }
-      
+
       console.log('[control] 准备显示确认对话框');
       // 显示确认对话框
-      showConfirmDialog(function(confirmed) {
+      showConfirmDialog(function (confirmed) {
         console.log('[control] ========== 确认对话框回调执行 ==========');
         console.log('[control] 用户选择:', confirmed);
-        
+
         if (!confirmed) {
           console.log('[control] 用户取消连接');
           return;
         }
-        
+
         console.log('[control] 用户同意连接，继续执行');
         console.log('[control] 设置状态为 connecting');
         providerState[id] = 'connecting';
         render();
         console.log('[control] 开始调用 connect_provider');
         console.log('[control] 参数: providerId=' + id + ', refreshInterval=' + currentRefreshInterval);
-        
+
         // 使用当前保存的刷新间隔
         tauriInvoke('connect_provider', { providerId: id, refreshInterval: currentRefreshInterval })
-          .then(function(result) {
+          .then(function (result) {
             console.log('[control] connect_provider 成功:', result);
           })
           .catch(function (err) {
@@ -725,18 +791,18 @@
     console.log('[control] 页面加载完成，初始化');
     console.log('[control] Tauri API 状态:', window.__TAURI__ ? '可用' : '不可用');
     render();
-    
+
     // 绑定确认对话框事件
     var confirmDialogOverlay = document.getElementById('confirm-dialog-overlay');
     var confirmOkBtn = document.getElementById('confirm-ok-btn');
     var confirmCancelBtn = document.getElementById('confirm-cancel-btn');
-    
+
     if (!confirmDialogOverlay || !confirmOkBtn || !confirmCancelBtn) {
       console.error('[control] 确认对话框元素未找到');
     } else {
       console.log('[control] 确认对话框元素已找到，绑定事件');
-      
-      confirmOkBtn.addEventListener('click', function() {
+
+      confirmOkBtn.addEventListener('click', function () {
         console.log('[control] 确认按钮被点击');
         // 先保存回调，再隐藏对话框
         var callback = confirmCallback;
@@ -748,8 +814,8 @@
           console.error('[control] 回调函数为空！');
         }
       });
-      
-      confirmCancelBtn.addEventListener('click', function() {
+
+      confirmCancelBtn.addEventListener('click', function () {
         console.log('[control] 取消按钮被点击');
         // 先保存回调，再隐藏对话框
         var callback = confirmCallback;
@@ -759,9 +825,9 @@
           callback(false);
         }
       });
-      
+
       // 点击遮罩层关闭对话框
-      confirmDialogOverlay.addEventListener('click', function(e) {
+      confirmDialogOverlay.addEventListener('click', function (e) {
         if (e.target === confirmDialogOverlay) {
           console.log('[control] 点击遮罩层关闭对话框');
           // 先保存回调，再隐藏对话框
@@ -773,7 +839,7 @@
         }
       });
     }
-    
+
     // 配置管理 UI 元素
     var refreshInput = document.getElementById('refresh-interval');
     var settingsPage = document.getElementById('settings-page');
@@ -781,23 +847,23 @@
     var closeSettingsBtn = document.getElementById('close-settings-btn');
     var cancelSettingsBtn = document.getElementById('cancel-settings-btn');
     var saveSettingsBtn = document.getElementById('save-settings-btn');
-    
+
     // 打开设置页面
-    settingsBtn.addEventListener('click', function() {
+    settingsBtn.addEventListener('click', function () {
       refreshInput.value = currentRefreshInterval;
       settingsPage.classList.add('active');
     });
-    
+
     // 关闭设置页面
     function closeSettings() {
       settingsPage.classList.remove('active');
     }
-    
+
     closeSettingsBtn.addEventListener('click', closeSettings);
     cancelSettingsBtn.addEventListener('click', closeSettings);
-    
+
     // 保存设置
-    saveSettingsBtn.addEventListener('click', function() {
+    saveSettingsBtn.addEventListener('click', function () {
       var interval = parseInt(refreshInput.value, 10);
       if (isNaN(interval) || interval < 60) {
         interval = 60;
@@ -806,21 +872,22 @@
         interval = 600;
         refreshInput.value = '600';
       }
-      
+
       currentRefreshInterval = interval;
       console.log('[control] 保存刷新间隔:', interval, '秒');
-      
+
       tauriInvoke('set_refresh_interval', { intervalSeconds: interval })
-        .then(function() {
+        .then(function () {
           console.log('[control] 刷新间隔设置成功');
           closeSettings();
         })
-        .catch(function(err) {
+        .catch(function (err) {
           console.error('[control] 设置刷新间隔失败:', err);
           alert('设置失败：' + err);
         });
     });
-    
+
   </script>
 </body>
+
 </html>

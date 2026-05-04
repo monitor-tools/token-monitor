@@ -75,10 +75,11 @@ impl ProviderConfig {
 
 pub mod aliyun;
 pub mod baidu;
+pub mod volcengine;
 
 /// 返回所有已注册的 Provider 配置列表
 ///
 /// 新增 Provider 时，在此处追加 `new_provider::provider()` 即可
 pub fn all_providers() -> Vec<ProviderConfig> {
-    vec![aliyun::provider(), baidu::provider()]
+    vec![aliyun::provider(), baidu::provider(), volcengine::provider()]
 }

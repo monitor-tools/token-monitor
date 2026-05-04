@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "volcengine-remote-capability",
+  "description": "允许火山引擎方舟控制台域名的 WebView 访问 Tauri IPC",
+  "windows": ["provider_volcengine"],
+  "remote": {
+    "urls": [
+      "https://*.volcengine.com",
+      "https://volcengine.com"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "core:window:default"
+  ]
+}
