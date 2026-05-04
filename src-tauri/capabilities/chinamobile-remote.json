@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "chinamobile-remote-capability",
+  "description": "允许中国移动智算包域名的 WebView 访问 Tauri IPC",
+  "windows": ["provider_chinamobile"],
+  "remote": {
+    "urls": [
+      "https://maas.gd.chinamobile.com:38559",
+      "https://*.chinamobile.com",
+      "https://chinamobile.com"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "core:window:default"
+  ]
+}
