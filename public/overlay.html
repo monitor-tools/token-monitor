@@ -88,7 +88,7 @@
       /* ── 数据内容区 ──────────────────────────────────────────────────────────── */
       .content {
         flex: 1;
-        padding: 12px 14px 14px;
+        padding: 10px 14px 0; /* 底部内边距改为 0 */
         overflow: hidden;
       }
 
@@ -119,7 +119,7 @@
         justify-content: space-between;
         align-items: baseline;
         gap: 8px;
-        margin-bottom: 8px;
+        margin-bottom: 6px; /* 减小行间距：8px -> 6px */
         font-size: 12px;
         line-height: 1.6;
       }
@@ -137,7 +137,8 @@
       .v.hi { color: #60f080; font-weight: 700; }
 
       .updated {
-        margin-top: 10px;
+        margin-top: 6px;
+        margin-bottom: 10px; /* 添加底部边距，避免紧贴边框 */
         font-size: 10px;
         opacity: 0.35;
         text-align: right;
@@ -145,21 +146,21 @@
 
       /* ── 配额分组（百度千帆等三段配额）──────────────────────────────────────────── */
       .quota-section {
-        margin-top: 10px;
-        padding-top: 10px;
+        margin-top: 8px; /* 减小上边距：10px -> 8px */
+        padding-top: 8px; /* 减小上内边距：10px -> 8px */
         border-top: 1px solid rgba(255, 255, 255, 0.08);
       }
 
       .quota-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
+        gap: 6px; /* 减小间距：8px -> 6px */
       }
 
       .quota-group {
         background: rgba(255, 255, 255, 0.04);
         border-radius: 6px;
-        padding: 7px 5px 6px;
+        padding: 6px 5px 5px; /* 减小内边距：7px 5px 6px -> 6px 5px 5px */
         text-align: center;
       }
 
@@ -212,17 +213,17 @@
         display: none; /* 展开时隐藏 */
         position: absolute;
         inset: 0;
-        border-radius: 12px; /* 减小圆角 */
-        background: rgba(16, 20, 28, 0.95); /* 提高不透明度，确保在 Windows 下可见 */
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
+        border-radius: 5px;
+        background: rgba(16, 20, 28, 0.98);
+        border: 1px solid rgba(8, 10, 14, 0.95); /* 使用比背景更深的颜色作为边框 */
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
         color: #eef2ff;
         align-items: center;
         justify-content: space-between;
-        padding: 0 10px; /* 减小内边距 */
-        gap: 6px; /* 减小间距 */
+        padding: 0 5px;
+        gap: 3px;
         cursor: move;
         /* 确保内容可见 */
         z-index: 1;
@@ -230,38 +231,42 @@
       body.compact .compact-view { display: flex; }
 
       .compact-provider {
-        font-size: 9px; /* 减小字体 */
+        font-size: 8px;
         opacity: 0.5;
         flex-shrink: 0;
         cursor: pointer;
+        line-height: 1;
       }
       .compact-text {
-        font-size: 11px; /* 减小字体 */
+        font-size: 9px;
         font-weight: 700;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
         text-align: right;
         flex: 1;
+        line-height: 1;
       }
 
       /* ── 模式切换按钮（展开态左上角 / 折叠态右侧）───────────────── */
       .mode-btn {
         flex-shrink: 0;
-        width: 20px; /* 减小按钮尺寸 */
-        height: 20px;
+        width: 14px;
+        height: 14px;
         border: none;
         background: transparent;
         color: rgba(238, 242, 255, 0.3);
         cursor: pointer;
-        font-size: 10px; /* 减小图标尺寸 */
+        font-size: 8px;
         padding: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 4px;
+        border-radius: 2px;
         line-height: 1;
         transition: color 0.15s, background 0.15s;
+        position: relative;
+        top: 1px; /* 向下偏移1px */
       }
       .mode-btn:hover {
         color: rgba(238, 242, 255, 0.85);
@@ -488,7 +493,7 @@
           document.body.appendChild(tempContainer);
           
           // 获取内容实际高度 + padding
-          const contentPadding = 12 + 14 + 14; // padding: 12px 14px 14px
+          const contentPadding = 10 + 14 + 0; // padding: 10px 14px 0
           const actualContentHeight = tempContainer.scrollHeight + contentPadding;
           
           document.body.removeChild(tempContainer);

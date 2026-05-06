@@ -38,12 +38,23 @@ fn injection_script() -> String {
     let lastFetchAt = 0;
     let prevLoggedIn = null;
     let currentApiKey = '';
-    let isPaused = false; // 暂停标志，窗口可见时暂停定时任务
+    let checkPaused = false; // 检测是否暂停
 
     // 暴露全局函数供 Rust 侧动态修改刷新间隔
     window.__LSYS_SET_INTERVAL__ = function(intervalMs) {
         FETCH_INTERVAL = intervalMs;
         console.log('[ChinaMobile] 刷新间隔已更新为:', intervalMs, 'ms');
+    };
+
+    // 暴露全局函数供 Rust 侧暂停/恢复检测
+    window.__LSYS_PAUSE_CHECK__ = function() {
+        checkPaused = true;
+        console.log('[ChinaMobile] 登录检测已暂停');
+    };
+
+    window.__LSYS_RESUME_CHECK__ = function() {
+        checkPaused = false;
+        console.log('[ChinaMobile] 登录检测已恢复');
     };
 
     // ── IPC 工具 ──────────────────────────────────────────────────────────────
@@ -225,9 +236,9 @@ fn injection_script() -> String {
     // 已登录期间每 FETCH_INTERVAL ms 拉取一次数据
 
     async function tick() {
-        // 如果暂停，跳过所有检查
-        if (isPaused) {
-            console.log('[ChinaMobile] 定时任务已暂停');
+        // 如果检测被暂停，跳过本次检测
+        if (checkPaused) {
+            console.log('[ChinaMobile] 检测已暂停，跳过本次 tick');
             return;
         }
 
@@ -284,7 +295,7 @@ fn injection_script() -> String {
                 console.log('[ChinaMobile] 检测到查询按钮点击');
                 
                 // 恢复定时任务
-                isPaused = false;
+                checkPaused = false;
                 console.log('[ChinaMobile] 定时任务已恢复');
                 
                 // 等待一小段时间让页面更新
@@ -319,7 +330,7 @@ fn injection_script() -> String {
             if (!document.hidden) {
                 console.log('[ChinaMobile] 窗口变为可见，暂停定时任务并重置登录状态');
                 // 窗口变为可见时，暂停定时任务
-                isPaused = true;
+                checkPaused = true;
                 // 重置状态以便重新检测
                 prevLoggedIn = null;
                 currentApiKey = '';
@@ -327,7 +338,7 @@ fn injection_script() -> String {
             } else {
                 console.log('[ChinaMobile] 窗口变为隐藏');
                 // 窗口隐藏时，确保定时任务恢复
-                isPaused = false;
+                checkPaused = false;
             }
         });
         

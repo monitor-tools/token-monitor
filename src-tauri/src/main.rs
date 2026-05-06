@@ -124,6 +124,11 @@ fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_i
     if let Some(win) = app.get_webview_window(&label) {
         // 窗口已存在：导航回目标页（处理 Session 过期场景）
         println!("[DEBUG] 窗口已存在，重新显示并导航");
+        
+        // 暂停登录检测，避免窗口立即被关闭
+        let _ = win.eval("if (window.__LSYS_PAUSE_CHECK__) window.__LSYS_PAUSE_CHECK__();");
+        println!("[DEBUG] 已暂停登录检测");
+        
         let _ = win.eval(&format!("window.location.href = '{}'", provider.target_url));
         let _ = win.show();
         let _ = win.set_focus();
@@ -232,6 +237,14 @@ fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_i
         win.on_window_event(move |event| {
             if let WindowEvent::CloseRequested { .. } = event {
                 println!("[DEBUG] Provider 窗口被用户关闭: {}", pid_close);
+                
+                // 恢复登录检测
+                let label_close = format!("provider_{}", pid_close);
+                if let Some(win_close) = handle_close.get_webview_window(&label_close) {
+                    let _ = win_close.eval("if (window.__LSYS_RESUME_CHECK__) window.__LSYS_RESUME_CHECK__();");
+                    println!("[DEBUG] 已恢复登录检测");
+                }
+                
                 // 通知控制面板：已断开（可重新连接）
                 notify_control(&handle_close, &pid_close, "disconnected");
                 // 重新显示控制面板，让用户可以重新点击「连接」
@@ -302,6 +315,10 @@ fn setup_global_events(overlay: &tauri::WebviewWindow, handle: &AppHandle) {
         println!("[DEBUG] 尝试隐藏窗口: {}", label);
         if let Some(win) = handle_clone.get_webview_window(&label) {
             let _ = handle_clone.run_on_main_thread(move || {
+                // 恢复登录检测
+                let _ = win.eval("if (window.__LSYS_RESUME_CHECK__) window.__LSYS_RESUME_CHECK__();");
+                println!("[DEBUG] 已恢复登录检测");
+                
                 if let Err(e) = win.hide() {
                     eprintln!("[ERROR] hide provider 失败: {e}");
                 } else {

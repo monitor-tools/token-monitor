@@ -38,14 +38,34 @@ pub fn setup_tray(handle: &AppHandle) -> tauri::Result<()> {
     tray.on_menu_event(move |app, event| {
         match event.id.as_ref() {
             "toggle_control" => {
-                toggle_window(app, "control");
-                // 切换后更新菜单
-                update_tray_menu(&app_handle, &tray_clone);
+                let app_clone = app.clone();
+                let tray_update = tray_clone.clone();
+                let handle_update = app_handle.clone();
+                
+                // 使用 run_on_main_thread 确保线程安全
+                let _ = app.run_on_main_thread(move || {
+                    toggle_window(&app_clone, "control");
+                    // 延迟更新菜单，确保窗口状态已更新
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        update_tray_menu(&handle_update, &tray_update);
+                    });
+                });
             }
             "toggle_overlay" => {
-                toggle_window(app, "overlay");
-                // 切换后更新菜单
-                update_tray_menu(&app_handle, &tray_clone);
+                let app_clone = app.clone();
+                let tray_update = tray_clone.clone();
+                let handle_update = app_handle.clone();
+                
+                // 使用 run_on_main_thread 确保线程安全
+                let _ = app.run_on_main_thread(move || {
+                    toggle_window_with_recovery(&app_clone, "overlay");
+                    // 延迟更新菜单，确保窗口状态已更新
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        update_tray_menu(&handle_update, &tray_update);
+                    });
+                });
             }
             "quit" => app.exit(0),
             _ => {}
@@ -166,6 +186,36 @@ fn toggle_window(app: &AppHandle, label: &str) {
         } else {
             let _ = w.show();
             let _ = w.set_focus();
+        }
+    }
+}
+
+/// 切换 overlay 窗口的可见状态，带恢复机制（Windows 专用）
+fn toggle_window_with_recovery(app: &AppHandle, label: &str) {
+    if let Some(w) = app.get_webview_window(label) {
+        let is_visible = w.is_visible().unwrap_or(false);
+        
+        if is_visible {
+            let _ = w.hide();
+        } else {
+            // Windows: 显示前确保窗口属性正确
+            #[cfg(target_os = "windows")]
+            {
+                let _ = w.set_skip_taskbar(false);
+                let _ = w.set_always_on_top(true);
+            }
+            
+            let _ = w.show();
+            let _ = w.set_focus();
+            
+            // Windows: 显示后再次确认窗口可见
+            #[cfg(target_os = "windows")]
+            {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    let _ = w.set_focus();
+                });
+            }
         }
     }
 }

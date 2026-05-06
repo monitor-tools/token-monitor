@@ -33,11 +33,23 @@ fn injection_script() -> String {
 
     let prevLoggedIn = null;
     let lastFetchAt  = 0;
+    let checkPaused  = false; // 检测是否暂停
 
     // 暴露全局函数供 Rust 侧动态修改刷新间隔
     window.__LSYS_SET_INTERVAL__ = function(intervalMs) {
         FETCH_INTERVAL = intervalMs;
         console.log('[Baidu] 刷新间隔已更新为:', intervalMs, 'ms');
+    };
+
+    // 暴露全局函数供 Rust 侧暂停/恢复检测
+    window.__LSYS_PAUSE_CHECK__ = function() {
+        checkPaused = true;
+        console.log('[Baidu] 登录检测已暂停');
+    };
+
+    window.__LSYS_RESUME_CHECK__ = function() {
+        checkPaused = false;
+        console.log('[Baidu] 登录检测已恢复');
     };
 
     // ── IPC 工具 ───────────────────────────────────────────────────────────────
@@ -146,6 +158,12 @@ fn injection_script() -> String {
     // ── 主循环 ─────────────────────────────────────────────────────────────────
 
     async function tick() {
+        // 如果检测被暂停，跳过本次检测
+        if (checkPaused) {
+            console.log('[Baidu] 检测已暂停，跳过本次 tick');
+            return;
+        }
+
         const loggedIn = isLoggedIn();
 
         if (prevLoggedIn !== true && loggedIn) {

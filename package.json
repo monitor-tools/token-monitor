@@ -4,7 +4,7 @@
   "description": "Code Plan (Token Plan) 套餐余量桌面小工具",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && mkdir -p dist && cp -r public/* dist/",
+    "build": "tsc && node -e \"const fs=require('fs');if(!fs.existsSync('dist'))fs.mkdirSync('dist',{recursive:true});\" && node -e \"const fs=require('fs');const path=require('path');const src='public';const dest='dist';fs.readdirSync(src).forEach(f=>{const s=path.join(src,f);const d=path.join(dest,f);if(fs.statSync(s).isDirectory()){fs.cpSync(s,d,{recursive:true})}else{fs.copyFileSync(s,d)}});\"",
     "preview": "vite preview",
     "tauri": "tauri"
   },

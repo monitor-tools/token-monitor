@@ -21,9 +21,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 // ─── 常量 ─────────────────────────────────────────────────────────────────────
 
 pub const EXPANDED_W: u32 = 340;
-pub const EXPANDED_H: u32 = 255;
+pub const EXPANDED_H: u32 = 250;  // 减小高度：255 -> 250
 pub const COMPACT_W:  u32 = 160;  // 减小宽度：200 -> 160
-pub const COMPACT_H:  u32 = 45;   // 减小高度：58 -> 48
+pub const COMPACT_H:  u32 = 24;   // 进一步减小高度：28 -> 24
 
 // 标记 overlay 窗口是否已经初始化显示过
 static OVERLAY_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -67,7 +67,7 @@ pub fn create_overlay(handle: &AppHandle) -> tauri::Result<tauri::WebviewWindow>
     .decorations(false)
     .transparent(true)
     .always_on_top(true)
-    .skip_taskbar(true)
+    .skip_taskbar(false) // Windows: 改为 false，避免窗口被系统隐藏
     .visible(false)
     .build()?;
 
@@ -207,7 +207,16 @@ pub fn push_provider_data(overlay: &tauri::WebviewWindow, payload: &serde_json::
 pub fn show_initial(overlay: &tauri::WebviewWindow) {
     // 所有平台统一使用逻辑尺寸
     let _ = overlay.set_size(Size::Logical(tauri::LogicalSize::new(EXPANDED_W as f64, EXPANDED_H as f64)));
+    
+    // Windows: 确保窗口可见且置顶
+    #[cfg(target_os = "windows")]
+    {
+        let _ = overlay.set_always_on_top(true);
+        let _ = overlay.set_skip_taskbar(false);
+    }
+    
     let _ = overlay.show();
+    let _ = overlay.set_focus();
 
     // show() 后 current_monitor 有值
     if let Ok(Some(monitor)) = overlay.current_monitor() {
