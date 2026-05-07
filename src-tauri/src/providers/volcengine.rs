@@ -48,6 +48,11 @@ fn injection_script() -> String {
     let prevLoggedIn = wnHas(WN_LOGGED_IN) ? true : null; // 跨导航保留登录状态
     let lastFetchAt  = 0;
 
+    console.log('[Volcengine] 初始化状态:');
+    console.log('  - window.name 包含登录标记:', wnHas(WN_LOGGED_IN));
+    console.log('  - prevLoggedIn 初始值:', prevLoggedIn);
+    console.log('  - window.name 内容:', window.name);
+
     // 暴露全局函数供 Rust 侧动态修改刷新间隔
     window.__LSYS_SET_INTERVAL__ = function(intervalMs) {
         FETCH_INTERVAL = intervalMs;
@@ -80,9 +85,26 @@ fn injection_script() -> String {
         return '';
     }
 
+    // 列出所有 Cookie 名称（用于调试）
+    function listCookieNames() {
+        const names = [];
+        for (const part of document.cookie.split(';')) {
+            const [k] = part.trim().split('=');
+            if (k) names.push(k.trim());
+        }
+        return names;
+    }
+
     function isLoggedIn() {
         const accountId = getCookie('AccountID');
-        return accountId !== '';
+        const isLogged = accountId !== '';
+        
+        console.log('[Volcengine] isLoggedIn 检查:');
+        console.log('  - AccountID Cookie 值:', accountId ? (accountId.substring(0, 10) + '...') : '(空)');
+        console.log('  - 判定结果:', isLogged ? '✅ 已登录' : '❌ 未登录');
+        console.log('  - 当前所有 Cookie 名称:', listCookieNames().join(', '));
+        
+        return isLogged;
     }
 
     // ── 获取 CSRF Token ──────────────────────────────────────────────────────
@@ -355,30 +377,51 @@ fn injection_script() -> String {
     // ── 主循环 ────────────────────────────────────────────────────────────────
 
     async function tick() {
+        console.log('[Volcengine] ========== tick 开始 ==========');
+        console.log('[Volcengine] 当前 URL:', window.location.href);
+        console.log('[Volcengine] prevLoggedIn 状态:', prevLoggedIn);
+        
         const loggedIn = isLoggedIn();
+        console.log('[Volcengine] 本次检测结果:', loggedIn);
 
         if (prevLoggedIn !== true && loggedIn) {
             // null/false → true：检测到登录
-            console.log('[Volcengine] 检测到登录, AccountID:', getCookie('AccountID').substring(0, 10) + '...');
+            const accountId = getCookie('AccountID');
+            console.log('[Volcengine] 🎉 检测到登录状态变化 (未登录 → 已登录)');
+            console.log('[Volcengine] AccountID:', accountId.substring(0, 10) + '...');
             prevLoggedIn = true;
             wnSet(WN_LOGGED_IN);
             await emitToRust('provider_login_detected', { provider_id: PROVIDER_ID });
         } else if (prevLoggedIn === true && !loggedIn) {
             // true → false：检测到登出
-            console.log('[Volcengine] 检测到登出');
+            console.log('[Volcengine] 🚪 检测到登出状态变化 (已登录 → 未登录)');
             prevLoggedIn = false;
             wnClear(WN_LOGGED_IN);
             await emitToRust('provider_logout_detected', { provider_id: PROVIDER_ID });
         } else if (prevLoggedIn === null) {
-            // 初始化：当前未登录，静默设置
-            prevLoggedIn = false;
+            // 初始化：设置初始状态（但不发送登录事件，避免误报）
+            console.log('[Volcengine] 🔧 初始化状态，当前:', loggedIn ? '已登录' : '未登录');
+            prevLoggedIn = loggedIn;
+            if (loggedIn) {
+                wnSet(WN_LOGGED_IN);
+            }
+        } else {
+            console.log('[Volcengine] ⏸️  状态无变化，保持:', loggedIn ? '已登录' : '未登录');
         }
 
         // 已登录时按间隔拉取数据
-        if (loggedIn && Date.now() - lastFetchAt >= FETCH_INTERVAL) {
-            console.log('[Volcengine] 触发数据拉取, 距上次:', Date.now() - lastFetchAt, 'ms');
-            await fetchAndEmitData();
+        if (loggedIn) {
+            const timeSinceLastFetch = Date.now() - lastFetchAt;
+            console.log('[Volcengine] 距上次拉取:', timeSinceLastFetch, 'ms, 间隔要求:', FETCH_INTERVAL, 'ms');
+            if (timeSinceLastFetch >= FETCH_INTERVAL) {
+                console.log('[Volcengine] 🔄 触发数据拉取');
+                await fetchAndEmitData();
+            }
+        } else {
+            console.log('[Volcengine] ⏭️  未登录，跳过数据拉取');
         }
+        
+        console.log('[Volcengine] ========== tick 结束 ==========\n');
     }
 
     console.log('[Volcengine] 启动定时器');

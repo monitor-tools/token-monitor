@@ -4,14 +4,14 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-mod overlay;
-mod providers;
-#[cfg(target_os = "windows")]
-mod windows_taskbar;
 #[cfg(target_os = "macos")]
 mod macos_tray;
+mod overlay;
+mod providers;
 mod tray;
 mod window;
+#[cfg(target_os = "windows")]
+mod windows_taskbar;
 
 use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
@@ -39,7 +39,9 @@ fn main() {
                 app.set_activation_policy(ActivationPolicy::Accessory);
 
                 let handle = app.handle().clone();
-                app.manage(AppState { provider_status: Mutex::new(HashMap::new()) });
+                app.manage(AppState {
+                    provider_status: Mutex::new(HashMap::new()),
+                });
 
                 tray::setup_tray(&handle)?;
 
@@ -59,6 +61,7 @@ fn main() {
                 connect_provider,
                 hide_control_panel,
                 set_refresh_interval,
+                #[cfg(target_os = "windows")]
                 set_taskbar_widget_colors,
             ])
             .run(tauri::generate_context!())
@@ -79,7 +82,9 @@ fn main() {
             }))
             .setup(|app| {
                 let handle = app.handle().clone();
-                app.manage(AppState { provider_status: Mutex::new(HashMap::new()) });
+                app.manage(AppState {
+                    provider_status: Mutex::new(HashMap::new()),
+                });
 
                 tray::setup_tray(&handle)?;
 
@@ -123,8 +128,15 @@ fn main() {
 ///
 /// 由控制面板 JS 调用：`invoke('connect_provider', { providerId: 'aliyun' })`
 #[tauri::command]
-async fn connect_provider(app: AppHandle, provider_id: String, refresh_interval: Option<u32>) -> Result<(), String> {
-    println!("[DEBUG] connect_provider 被调用: provider_id={}, refresh_interval={:?}", provider_id, refresh_interval);
+async fn connect_provider(
+    app: AppHandle,
+    provider_id: String,
+    refresh_interval: Option<u32>,
+) -> Result<(), String> {
+    println!(
+        "[DEBUG] connect_provider 被调用: provider_id={}, refresh_interval={:?}",
+        provider_id, refresh_interval
+    );
 
     // 在 Windows 上必须使用 async 命令来创建窗口，否则会挂起
     // 参考: https://github.com/tauri-apps/tauri/issues/4121
@@ -133,7 +145,11 @@ async fn connect_provider(app: AppHandle, provider_id: String, refresh_interval:
     Ok(())
 }
 
-fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_interval: Option<u32>) -> Result<(), String> {
+fn create_provider_window_internal(
+    app: &AppHandle,
+    provider_id: &str,
+    refresh_interval: Option<u32>,
+) -> Result<(), String> {
     let all = providers::all_providers();
     let provider = all
         .into_iter()
@@ -144,7 +160,10 @@ fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_i
             err
         })?;
 
-    println!("[DEBUG] 找到 Provider: name={}, target_url={}", provider.name, provider.target_url);
+    println!(
+        "[DEBUG] 找到 Provider: name={}, target_url={}",
+        provider.name, provider.target_url
+    );
     let label = provider.window_label();
     println!("[DEBUG] 窗口 label: {}", label);
 
@@ -179,16 +198,16 @@ fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_i
         println!("  - min_inner_size: 800x600");
         println!("  - center: true");
         println!("  - on_navigation: 允许所有导航");
-        println!("  - injection_script 长度: {} 字符", provider.injection_script.len());
+        println!(
+            "  - injection_script 长度: {} 字符",
+            provider.injection_script.len()
+        );
 
-        let url: tauri::Url = provider
-            .target_url
-            .parse()
-            .map_err(|e| {
-                let err = format!("URL 解析失败: {}", e);
-                eprintln!("[ERROR] {}", err);
-                err
-            })?;
+        let url: tauri::Url = provider.target_url.parse().map_err(|e| {
+            let err = format!("URL 解析失败: {}", e);
+            eprintln!("[ERROR] {}", err);
+            err
+        })?;
 
         println!("[DEBUG] URL 解析成功: {:?}", url);
 
@@ -196,83 +215,100 @@ fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_i
         println!("[DEBUG] 目标 URL: {}", provider.target_url);
 
         // 获取主显示器尺寸，确保窗口不超过屏幕大小
-        let (window_width, window_height) = if let Some(monitor) = app.primary_monitor().ok().flatten() {
-            let size = monitor.size();
-            let screen_width = size.width as f64;
-            let screen_height = size.height as f64;
+        let (window_width, window_height) =
+            if let Some(monitor) = app.primary_monitor().ok().flatten() {
+                let size = monitor.size();
+                let screen_width = size.width as f64;
+                let screen_height = size.height as f64;
 
-            // 期望窗口大小
-            let desired_width = 1280.0_f64;
-            let desired_height = 800.0_f64;
+                // 期望窗口大小
+                let desired_width = 1280.0_f64;
+                let desired_height = 800.0_f64;
 
-            // 留出一些边距（屏幕的 90%）
-            let max_width = screen_width * 0.9;
-            let max_height = screen_height * 0.9;
+                // 留出一些边距（屏幕的 90%）
+                let max_width = screen_width * 0.9;
+                let max_height = screen_height * 0.9;
 
-            let final_width = if desired_width < max_width { desired_width } else { max_width };
-            let final_height = if desired_height < max_height { desired_height } else { max_height };
+                let final_width = if desired_width < max_width {
+                    desired_width
+                } else {
+                    max_width
+                };
+                let final_height = if desired_height < max_height {
+                    desired_height
+                } else {
+                    max_height
+                };
 
-            println!("[DEBUG] 屏幕尺寸: {}x{}, 窗口尺寸: {}x{}",
-                     screen_width, screen_height, final_width, final_height);
+                println!(
+                    "[DEBUG] 屏幕尺寸: {}x{}, 窗口尺寸: {}x{}",
+                    screen_width, screen_height, final_width, final_height
+                );
 
-            (final_width, final_height)
-        } else {
-            println!("[WARN] 无法获取屏幕尺寸，使用默认值");
-            (1280.0, 800.0)
-        };
+                (final_width, final_height)
+            } else {
+                println!("[WARN] 无法获取屏幕尺寸，使用默认值");
+                (1280.0, 800.0)
+            };
 
-        let win = WebviewWindowBuilder::new(
-            app,
-            label.clone(),
-            WebviewUrl::External(url.clone()),
-        )
-        .title(provider.name)
-        .inner_size(window_width, window_height)
-        .center()
-        .visible(false) // 初始隐藏
-        // initialization_script 在每次页面加载（含导航跳转）时自动注入脚本，
-        // 避免依赖 eval 一次性注入：用户在登录页完成登录后跳回控制台时脚本仍能运行。
-        .initialization_script(&provider.injection_script)
-        .build()
-        .map_err(|e| {
-            let err = format!("窗口创建失败: {}", e);
-            eprintln!("[ERROR] {}", err);
-            err
-        })?;
+        let win = WebviewWindowBuilder::new(app, label.clone(), WebviewUrl::External(url.clone()))
+            .title(provider.name)
+            .inner_size(window_width, window_height)
+            .center()
+            .visible(false) // 初始隐藏
+            // initialization_script 在每次页面加载（含导航跳转）时自动注入脚本，
+            // 避免依赖 eval 一次性注入：用户在登录页完成登录后跳回控制台时脚本仍能运行。
+            .initialization_script(&provider.injection_script)
+            .build()
+            .map_err(|e| {
+                let err = format!("窗口创建失败: {}", e);
+                eprintln!("[ERROR] {}", err);
+                err
+            })?;
 
-        println!("[DEBUG] ✓ 窗口创建成功（initialization_script 已注册）: {}", label);
+        println!(
+            "[DEBUG] ✓ 窗口创建成功（initialization_script 已注册）: {}",
+            label
+        );
 
         // 如果提供了刷新间隔配置，立即应用
         if let Some(interval_sec) = refresh_interval {
             let interval_ms = interval_sec * 1000;
-            let script = format!("if (window.__LSYS_SET_INTERVAL__) window.__LSYS_SET_INTERVAL__({});", interval_ms);
+            let script = format!(
+                "if (window.__LSYS_SET_INTERVAL__) window.__LSYS_SET_INTERVAL__({});",
+                interval_ms
+            );
             let win_interval = win.clone();
             let handle_interval = app.clone();
-            handle_interval.run_on_main_thread(move || {
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(1000));
-                    let _ = win_interval.eval(&script);
-                    println!("[DEBUG] 已应用刷新间隔配置: {}秒", interval_sec);
-                });
-            }).ok();
+            handle_interval
+                .run_on_main_thread(move || {
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(1000));
+                        let _ = win_interval.eval(&script);
+                        println!("[DEBUG] 已应用刷新间隔配置: {}秒", interval_sec);
+                    });
+                })
+                .ok();
         }
 
         // 延迟显示窗口，给页面一些加载时间
         let win_show = win.clone();
         let handle_show = app.clone();
-        handle_show.run_on_main_thread(move || {
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(800));
-                let _ = win_show.show();
-                let _ = win_show.set_focus();
-                println!("[DEBUG] 窗口延迟显示完成");
-            });
-        }).ok();
+        handle_show
+            .run_on_main_thread(move || {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(800));
+                    let _ = win_show.show();
+                    let _ = win_show.set_focus();
+                    println!("[DEBUG] 窗口延迟显示完成");
+                });
+            })
+            .ok();
 
         // 监听子窗口关闭事件：阻止真正关闭，改为隐藏（保留 WebView 会话和 Cookie）
         // 根据当前状态决定是否通知控制面板
         let handle_close = app.clone();
-        let pid_close    = provider_id.to_string();
+        let pid_close = provider_id.to_string();
         win.on_window_event(move |event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 // 阻止系统关闭，保留 WebView 会话
@@ -339,7 +375,10 @@ fn set_refresh_interval(app: AppHandle, interval_seconds: u32) -> Result<(), Str
     for provider in providers::all_providers() {
         let label = provider.window_label();
         if let Some(win) = app.get_webview_window(&label) {
-            let script = format!("if (window.__LSYS_SET_INTERVAL__) window.__LSYS_SET_INTERVAL__({});", interval_ms);
+            let script = format!(
+                "if (window.__LSYS_SET_INTERVAL__) window.__LSYS_SET_INTERVAL__({});",
+                interval_ms
+            );
             let _ = win.eval(&script);
         }
     }
@@ -349,12 +388,9 @@ fn set_refresh_interval(app: AppHandle, interval_seconds: u32) -> Result<(), Str
 
 /// 设置任务栏小组件颜色（仅 Windows，其他平台调用将被忽略）
 /// 参数均为 `#RRGGBB` 格式的 HTML 颜色字符串。
+#[cfg(target_os = "windows")]
 #[tauri::command]
-fn set_taskbar_widget_colors(
-    bg_color: String,
-    text_color: String,
-) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
+fn set_taskbar_widget_colors(bg_color: String, text_color: String) -> Result<(), String> {
     windows_taskbar::set_widget_colors(&bg_color, &text_color);
     Ok(())
 }
@@ -363,7 +399,7 @@ fn set_taskbar_widget_colors(
 
 fn setup_global_events(overlay: &tauri::WebviewWindow, handle: &AppHandle) {
     // ── provider_login_detected ─────────────────────────────────────────────────────
-    let handle_clone  = handle.clone();
+    let handle_clone = handle.clone();
     let overlay_login = overlay.clone(); // 用于登录时立即推占位数据到悬浮窗
     overlay.listen("provider_login_detected", move |event| {
         println!("[DEBUG] 收到 provider_login_detected 事件");
@@ -464,7 +500,10 @@ fn setup_global_events(overlay: &tauri::WebviewWindow, handle: &AppHandle) {
             eprintln!("[ERROR] 无效 payload: {}", event.payload());
             return;
         };
-        let pid = json.get("provider_id").and_then(|v| v.as_str()).unwrap_or("?");
+        let pid = json
+            .get("provider_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
         println!("[Monitor] 数据更新: provider_id={}", pid);
         overlay::push_provider_data(&overlay_clone, &json);
     });
@@ -479,9 +518,15 @@ fn setup_global_events(overlay: &tauri::WebviewWindow, handle: &AppHandle) {
             eprintln!("[ERROR] overlay_active_tab_changed payload 解析失败");
             return;
         };
-        let pid = json.get("provider_id").and_then(|v| v.as_str()).unwrap_or("?");
+        let pid = json
+            .get("provider_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
         let tab = json.get("tab_index").and_then(|v| v.as_u64()).unwrap_or(0);
-        println!("[Monitor] 激活 TAB 变更: provider_id={}, tab_index={}", pid, tab);
+        println!(
+            "[Monitor] 激活 TAB 变更: provider_id={}, tab_index={}",
+            pid, tab
+        );
 
         #[cfg(target_os = "windows")]
         windows_taskbar::update_widget_data(&json);
@@ -492,7 +537,10 @@ fn setup_global_events(overlay: &tauri::WebviewWindow, handle: &AppHandle) {
 }
 
 fn notify_control(handle: &AppHandle, provider_id: &str, status: &str) {
-    println!("[DEBUG] notify_control: provider_id={}, status={}", provider_id, status);
+    println!(
+        "[DEBUG] notify_control: provider_id={}, status={}",
+        provider_id, status
+    );
 
     // 同步更新 Rust 侧状态追踪
     {
