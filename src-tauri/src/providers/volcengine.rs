@@ -12,7 +12,7 @@ use super::ProviderConfig;
 pub fn provider() -> ProviderConfig {
     ProviderConfig {
         id: "volcengine",
-        name: "火山引擎方舟",
+        name: "火山引擎",
         target_url: "https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&advancedActiveKey=subscribe",
         allowed_domains: vec![
             "https://*.volcengine.com".to_string(),
@@ -36,28 +36,22 @@ fn injection_script() -> String {
     window.__LSYS_VOLCENGINE_INJECTED__ = true;
 
     const PROVIDER_ID    = 'volcengine';
-    const PROVIDER_NAME  = '火山引擎方舟';
+    const PROVIDER_NAME  = '火山引擎';
     let FETCH_INTERVAL = 60_000; // 默认60秒，可通过 __LSYS_SET_INTERVAL__ 动态修改
 
-    let prevLoggedIn = null; // null | true | false
+    // ── window.name 状态持久化（跨页面导航保留登录状态）──────────────────────────
+    const WN_LOGGED_IN = '|__LSYS_LOGGED_IN__|';
+    function wnHas(flag)   { return window.name.includes(flag); }
+    function wnSet(flag)   { if (!wnHas(flag)) window.name += flag; }
+    function wnClear(flag) { window.name = window.name.split(flag).join(''); }
+
+    let prevLoggedIn = wnHas(WN_LOGGED_IN) ? true : null; // 跨导航保留登录状态
     let lastFetchAt  = 0;
-    let checkPaused  = false; // 检测是否暂停
 
     // 暴露全局函数供 Rust 侧动态修改刷新间隔
     window.__LSYS_SET_INTERVAL__ = function(intervalMs) {
         FETCH_INTERVAL = intervalMs;
         console.log('[Volcengine] 刷新间隔已更新为:', intervalMs, 'ms');
-    };
-
-    // 暴露全局函数供 Rust 侧暂停/恢复检测
-    window.__LSYS_PAUSE_CHECK__ = function() {
-        checkPaused = true;
-        console.log('[Volcengine] 登录检测已暂停');
-    };
-
-    window.__LSYS_RESUME_CHECK__ = function() {
-        checkPaused = false;
-        console.log('[Volcengine] 登录检测已恢复');
     };
 
     // ── IPC 工具 ──────────────────────────────────────────────────────────────
@@ -233,7 +227,7 @@ fn injection_script() -> String {
         }
 
         // ── 折叠摘要 ──
-        let compact_text = '火山引擎方舟';
+        let compact_text = '火山引擎';
         if (usageInfo && usageInfo.QuotaUsage) {
             console.log('[Volcengine] 构建 compact_text，QuotaUsage 长度:', usageInfo.QuotaUsage.length);
             // 优先显示5小时用量（session），其次显示周用量
@@ -361,23 +355,19 @@ fn injection_script() -> String {
     // ── 主循环 ────────────────────────────────────────────────────────────────
 
     async function tick() {
-        // 如果检测被暂停，跳过本次检测
-        if (checkPaused) {
-            console.log('[Volcengine] 检测已暂停，跳过本次 tick');
-            return;
-        }
-
         const loggedIn = isLoggedIn();
 
         if (prevLoggedIn !== true && loggedIn) {
             // null/false → true：检测到登录
             console.log('[Volcengine] 检测到登录, AccountID:', getCookie('AccountID').substring(0, 10) + '...');
             prevLoggedIn = true;
+            wnSet(WN_LOGGED_IN);
             await emitToRust('provider_login_detected', { provider_id: PROVIDER_ID });
         } else if (prevLoggedIn === true && !loggedIn) {
             // true → false：检测到登出
             console.log('[Volcengine] 检测到登出');
             prevLoggedIn = false;
+            wnClear(WN_LOGGED_IN);
             await emitToRust('provider_logout_detected', { provider_id: PROVIDER_ID });
         } else if (prevLoggedIn === null) {
             // 初始化：当前未登录，静默设置

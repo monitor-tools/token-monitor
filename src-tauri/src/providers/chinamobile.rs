@@ -8,7 +8,7 @@ use super::ProviderConfig;
 pub fn provider() -> ProviderConfig {
     ProviderConfig {
         id: "chinamobile",
-        name: "中国移动智算包",
+        name: "中国移动",
         // 直接访问中国移动的套餐页面
         target_url: "https://maas.gd.chinamobile.com:38559/maas/uifm/#/model-quota",
         allowed_domains: vec![
@@ -25,7 +25,7 @@ fn injection_script() -> String {
     console.log('[ChinaMobile] 注入脚本开始执行');
     console.log('[ChinaMobile] 当前 URL:', window.location.href);
     console.log('[ChinaMobile] Tauri API 可用性:', typeof window.__TAURI__);
-    
+
     if (window.__LSYS_CHINAMOBILE_INJECTED__) {
         console.log('[ChinaMobile] 脚本已注入，跳过');
         return;
@@ -33,28 +33,23 @@ fn injection_script() -> String {
     window.__LSYS_CHINAMOBILE_INJECTED__ = true;
 
     const PROVIDER_ID    = 'chinamobile';
-    const PROVIDER_NAME  = '中国移动智算包';
+    const PROVIDER_NAME  = '中国移动';
     let FETCH_INTERVAL = 60_000; // 默认60秒
+
+    // ── window.name 状态持久化（跨页面导航保留登录状态）──────────────────────────
+    const WN_LOGGED_IN = '|__LSYS_LOGGED_IN__|';
+    function wnHas(flag)   { return window.name.includes(flag); }
+    function wnSet(flag)   { if (!wnHas(flag)) window.name += flag; }
+    function wnClear(flag) { window.name = window.name.split(flag).join(''); }
+
     let lastFetchAt = 0;
-    let prevLoggedIn = null;
+    let prevLoggedIn = wnHas(WN_LOGGED_IN) ? true : null;
     let currentApiKey = '';
-    let checkPaused = false; // 检测是否暂停
 
     // 暴露全局函数供 Rust 侧动态修改刷新间隔
     window.__LSYS_SET_INTERVAL__ = function(intervalMs) {
         FETCH_INTERVAL = intervalMs;
         console.log('[ChinaMobile] 刷新间隔已更新为:', intervalMs, 'ms');
-    };
-
-    // 暴露全局函数供 Rust 侧暂停/恢复检测
-    window.__LSYS_PAUSE_CHECK__ = function() {
-        checkPaused = true;
-        console.log('[ChinaMobile] 登录检测已暂停');
-    };
-
-    window.__LSYS_RESUME_CHECK__ = function() {
-        checkPaused = false;
-        console.log('[ChinaMobile] 登录检测已恢复');
     };
 
     // ── IPC 工具 ──────────────────────────────────────────────────────────────
@@ -175,7 +170,7 @@ fn injection_script() -> String {
             // 构建并推送数据
             const providerData = buildProviderData(data.data);
             await emitToRust('provider_data_updated', providerData);
-            
+
             lastFetchAt = Date.now();
             console.log('[ChinaMobile] 数据推送成功');
         } catch (e) {
@@ -236,12 +231,6 @@ fn injection_script() -> String {
     // 已登录期间每 FETCH_INTERVAL ms 拉取一次数据
 
     async function tick() {
-        // 如果检测被暂停，跳过本次检测
-        if (checkPaused) {
-            console.log('[ChinaMobile] 检测已暂停，跳过本次 tick');
-            return;
-        }
-
         const loggedIn = isLoggedIn();
 
         console.log('[ChinaMobile] tick - loggedIn:', loggedIn, 'prevLoggedIn:', prevLoggedIn);
@@ -251,12 +240,14 @@ fn injection_script() -> String {
                 // null/false → true：检测到登录
                 console.log('[ChinaMobile] 检测到登录');
                 prevLoggedIn = true;
+                wnSet(WN_LOGGED_IN);
                 await emitToRust('provider_login_detected', { provider_id: PROVIDER_ID });
                 // lastFetchAt 保持 0，下次 tick 立即拉取数据
             } else {
                 if (prevLoggedIn === true) {
                     // true → false：检测到登出
                     console.log('[ChinaMobile] 检测到登出');
+                    wnClear(WN_LOGGED_IN);
                     await emitToRust('provider_logout_detected', { provider_id: PROVIDER_ID });
                 }
                 prevLoggedIn = false;
@@ -275,13 +266,13 @@ fn injection_script() -> String {
 
     function setupButtonListener() {
         console.log('[ChinaMobile] 设置查询按钮监听');
-        
+
         // 使用事件委托监听所有按钮点击
         document.addEventListener('click', async function(event) {
             // 检查点击的元素或其父元素是否是查询按钮
             let target = event.target;
             let clickedButton = null;
-            
+
             // 向上查找最多3层，找到按钮元素
             for (let i = 0; i < 3 && target; i++) {
                 if (target.classList && target.classList.contains('el-button--primary')) {
@@ -290,24 +281,20 @@ fn injection_script() -> String {
                 }
                 target = target.parentElement;
             }
-            
+
             if (clickedButton) {
-                console.log('[ChinaMobile] 检测到查询按钮点击');
-                
-                // 恢复定时任务
-                checkPaused = false;
-                console.log('[ChinaMobile] 定时任务已恢复');
-                
+                console.log('[ChinaMobile] 检测到查询按鈕点击');
+
                 // 等待一小段时间让页面更新
                 setTimeout(async () => {
                     console.log('[ChinaMobile] 延迟后执行检查');
-                    
+
                     // 强制重置状态，确保能检测到登录
                     const wasLoggedIn = prevLoggedIn;
                     prevLoggedIn = null;
-                    
+
                     await tick();
-                    
+
                     // 如果检测到登录，立即拉取数据
                     if (prevLoggedIn === true && !wasLoggedIn) {
                         console.log('[ChinaMobile] 首次登录，立即拉取数据');
@@ -316,50 +303,25 @@ fn injection_script() -> String {
                 }, 500);
             }
         }, true); // 使用捕获阶段确保能捕获到事件
-        
+
         console.log('[ChinaMobile] 查询按钮监听已设置');
     }
 
-    // ── 窗口可见性监听 ────────────────────────────────────────────────────────
-    // 当窗口从隐藏变为可见时（重新登录），暂停定时任务并重置状态
 
-    function setupVisibilityListener() {
-        console.log('[ChinaMobile] 设置窗口可见性监听');
-        
-        document.addEventListener('visibilitychange', function() {
-            if (!document.hidden) {
-                console.log('[ChinaMobile] 窗口变为可见，暂停定时任务并重置登录状态');
-                // 窗口变为可见时，暂停定时任务
-                checkPaused = true;
-                // 重置状态以便重新检测
-                prevLoggedIn = null;
-                currentApiKey = '';
-                lastFetchAt = 0;
-            } else {
-                console.log('[ChinaMobile] 窗口变为隐藏');
-                // 窗口隐藏时，确保定时任务恢复
-                checkPaused = false;
-            }
-        });
-        
-        console.log('[ChinaMobile] 窗口可见性监听已设置');
-    }
 
     console.log('[ChinaMobile] 启动定时器');
     setInterval(tick, 2000);
-    
+
     window.addEventListener('load', () => {
         console.log('[ChinaMobile] 页面加载完成，执行 tick');
         setupButtonListener();
-        setupVisibilityListener();
         tick();
     });
-    
+
     // 立即执行一次
     console.log('[ChinaMobile] 立即执行首次初始化');
     setTimeout(() => {
         setupButtonListener();
-        setupVisibilityListener();
         tick();
     }, 100);
 })();

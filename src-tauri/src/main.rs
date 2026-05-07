@@ -1,12 +1,24 @@
 // Windows Release 构建：禁止弹出额外的控制台窗口
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 mod overlay;
 mod providers;
+#[cfg(target_os = "windows")]
+mod windows_taskbar;
+#[cfg(target_os = "macos")]
+mod macos_tray;
 mod tray;
 mod window;
 
 use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+
+/// Rust 侧 Provider 状态追踪（"connecting" | "connected" | "disconnected"）
+struct AppState {
+    provider_status: Mutex<HashMap<String, String>>,
+}
 
 fn main() {
     // macOS: 设置为辅助应用，不在 Dock 中显示图标
@@ -25,8 +37,9 @@ fn main() {
             .setup(|app| {
                 // 设置为辅助应用（不显示 Dock 图标）
                 app.set_activation_policy(ActivationPolicy::Accessory);
-                
+
                 let handle = app.handle().clone();
+                app.manage(AppState { provider_status: Mutex::new(HashMap::new()) });
 
                 tray::setup_tray(&handle)?;
 
@@ -46,6 +59,7 @@ fn main() {
                 connect_provider,
                 hide_control_panel,
                 set_refresh_interval,
+                set_taskbar_widget_colors,
             ])
             .run(tauri::generate_context!())
             .expect("error while running tauri application");
@@ -65,12 +79,24 @@ fn main() {
             }))
             .setup(|app| {
                 let handle = app.handle().clone();
+                app.manage(AppState { provider_status: Mutex::new(HashMap::new()) });
 
                 tray::setup_tray(&handle)?;
 
                 // 创建共享 Overlay 窗口（初始隐藏）
                 let overlay_win = overlay::create_overlay(&handle)?;
                 overlay::setup_overlay_events(&overlay_win);
+
+                // Windows: 创建任务栏文字组件（原生窗口）
+                #[cfg(target_os = "windows")]
+                {
+                    if let Ok(_) = windows_taskbar::create_taskbar_widget(&handle) {
+                        eprintln!("[main] 任务栏组件创建成功");
+                        windows_taskbar::setup_taskbar_widget_events(&handle);
+                    } else {
+                        eprintln!("[main] 任务栏组件创建失败");
+                    }
+                }
 
                 // 全局事件监听
                 setup_global_events(&overlay_win, &handle);
@@ -84,6 +110,7 @@ fn main() {
                 connect_provider,
                 hide_control_panel,
                 set_refresh_interval,
+                set_taskbar_widget_colors,
             ])
             .run(tauri::generate_context!())
             .expect("error while running tauri application");
@@ -98,11 +125,11 @@ fn main() {
 #[tauri::command]
 async fn connect_provider(app: AppHandle, provider_id: String, refresh_interval: Option<u32>) -> Result<(), String> {
     println!("[DEBUG] connect_provider 被调用: provider_id={}, refresh_interval={:?}", provider_id, refresh_interval);
-    
+
     // 在 Windows 上必须使用 async 命令来创建窗口，否则会挂起
     // 参考: https://github.com/tauri-apps/tauri/issues/4121
     create_provider_window_internal(&app, &provider_id, refresh_interval)?;
-    
+
     Ok(())
 }
 
@@ -122,16 +149,27 @@ fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_i
     println!("[DEBUG] 窗口 label: {}", label);
 
     if let Some(win) = app.get_webview_window(&label) {
-        // 窗口已存在：导航回目标页（处理 Session 过期场景）
-        println!("[DEBUG] 窗口已存在，重新显示并导航");
-        
-        // 暂停登录检测，避免窗口立即被关闭
-        let _ = win.eval("if (window.__LSYS_PAUSE_CHECK__) window.__LSYS_PAUSE_CHECK__();");
-        println!("[DEBUG] 已暂停登录检测");
-        
-        let _ = win.eval(&format!("window.location.href = '{}'", provider.target_url));
+        // 窗口已存在：根据当前状态决定行为
+        let current_status = {
+            let state = app.state::<AppState>();
+            let map = state.provider_status.lock().unwrap();
+            map.get(provider_id).cloned().unwrap_or_default()
+        };
+
+        if current_status == "connected" {
+            // 已连接状态（用户点击"重新登录"）：仅显示窗口，不导航，不更改状态
+            // 登录检测继续在后台运行，但 Rust 侧会忽略已连接状态下的 login_detected 事件
+            println!("[DEBUG] 已连接状态（重新登录模式），仅显示窗口");
+        } else {
+            // 非已连接状态（Session 过期重连）：导航到目标页并通知"连接中"
+            println!("[DEBUG] 非已连接状态，导航到目标页");
+            let _ = win.eval(&format!("window.location.href = '{}'", provider.target_url));
+            notify_control(app, provider_id, "connecting");
+        }
+
         let _ = win.show();
         let _ = win.set_focus();
+        return Ok(());
     } else {
         // 首次连接：创建新的 Provider WebView 窗口
         println!("[DEBUG] 开始创建新窗口...");
@@ -142,7 +180,7 @@ fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_i
         println!("  - center: true");
         println!("  - on_navigation: 允许所有导航");
         println!("  - injection_script 长度: {} 字符", provider.injection_script.len());
-        
+
         let url: tauri::Url = provider
             .target_url
             .parse()
@@ -151,38 +189,38 @@ fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_i
                 eprintln!("[ERROR] {}", err);
                 err
             })?;
-        
+
         println!("[DEBUG] URL 解析成功: {:?}", url);
-        
+
         println!("[DEBUG] 开始创建窗口...");
         println!("[DEBUG] 目标 URL: {}", provider.target_url);
-        
+
         // 获取主显示器尺寸，确保窗口不超过屏幕大小
         let (window_width, window_height) = if let Some(monitor) = app.primary_monitor().ok().flatten() {
             let size = monitor.size();
             let screen_width = size.width as f64;
             let screen_height = size.height as f64;
-            
+
             // 期望窗口大小
             let desired_width = 1280.0_f64;
             let desired_height = 800.0_f64;
-            
+
             // 留出一些边距（屏幕的 90%）
             let max_width = screen_width * 0.9;
             let max_height = screen_height * 0.9;
-            
+
             let final_width = if desired_width < max_width { desired_width } else { max_width };
             let final_height = if desired_height < max_height { desired_height } else { max_height };
-            
-            println!("[DEBUG] 屏幕尺寸: {}x{}, 窗口尺寸: {}x{}", 
+
+            println!("[DEBUG] 屏幕尺寸: {}x{}, 窗口尺寸: {}x{}",
                      screen_width, screen_height, final_width, final_height);
-            
+
             (final_width, final_height)
         } else {
             println!("[WARN] 无法获取屏幕尺寸，使用默认值");
             (1280.0, 800.0)
         };
-        
+
         let win = WebviewWindowBuilder::new(
             app,
             label.clone(),
@@ -203,7 +241,7 @@ fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_i
         })?;
 
         println!("[DEBUG] ✓ 窗口创建成功（initialization_script 已注册）: {}", label);
-        
+
         // 如果提供了刷新间隔配置，立即应用
         if let Some(interval_sec) = refresh_interval {
             let interval_ms = interval_sec * 1000;
@@ -218,7 +256,7 @@ fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_i
                 });
             }).ok();
         }
-        
+
         // 延迟显示窗口，给页面一些加载时间
         let win_show = win.clone();
         let handle_show = app.clone();
@@ -231,28 +269,46 @@ fn create_provider_window_internal(app: &AppHandle, provider_id: &str, refresh_i
             });
         }).ok();
 
-        // 监听子窗口关闭事件：用户手动关闭时通知控制面板并重新显示控制面板
+        // 监听子窗口关闭事件：阻止真正关闭，改为隐藏（保留 WebView 会话和 Cookie）
+        // 根据当前状态决定是否通知控制面板
         let handle_close = app.clone();
         let pid_close    = provider_id.to_string();
         win.on_window_event(move |event| {
-            if let WindowEvent::CloseRequested { .. } = event {
-                println!("[DEBUG] Provider 窗口被用户关闭: {}", pid_close);
-                
-                // 恢复登录检测
-                let label_close = format!("provider_{}", pid_close);
-                if let Some(win_close) = handle_close.get_webview_window(&label_close) {
-                    let _ = win_close.eval("if (window.__LSYS_RESUME_CHECK__) window.__LSYS_RESUME_CHECK__();");
-                    println!("[DEBUG] 已恢复登录检测");
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                // 阻止系统关闭，保留 WebView 会话
+                api.prevent_close();
+                println!("[DEBUG] Provider 窗口关闭请求（将改为隐藏）: {}", pid_close);
+
+                // 检查当前 Rust 侧状态决定行为
+                let current_status = {
+                    let state = handle_close.state::<AppState>();
+                    let map = state.provider_status.lock().unwrap();
+                    map.get(&pid_close).cloned().unwrap_or_default()
+                };
+                let is_connected = current_status == "connected";
+
+                if !is_connected {
+                    // 连接中/断开状态：通知控制面板已断开
+                    notify_control(&handle_close, &pid_close, "disconnected");
                 }
-                
-                // 通知控制面板：已断开（可重新连接）
-                notify_control(&handle_close, &pid_close, "disconnected");
-                // 重新显示控制面板，让用户可以重新点击「连接」
-                if let Some(ctrl) = handle_close.get_webview_window("control") {
-                    let _ = handle_close.run_on_main_thread(move || {
-                        let _ = ctrl.show();
-                        let _ = ctrl.set_focus();
-                    });
+                // 已连接状态（重新登录模式）：保持状态不变，静默隐藏
+
+                // UI 操作在主线程执行
+                let win_label = format!("provider_{}", pid_close);
+                let h = handle_close.clone();
+                if let Err(e) = handle_close.run_on_main_thread(move || {
+                    if let Some(w) = h.get_webview_window(&win_label) {
+                        let _ = w.hide();
+                    }
+                    if !is_connected {
+                        // 重新显示控制面板，让用户可以重新点击「连接」
+                        if let Some(ctrl) = h.get_webview_window("control") {
+                            let _ = ctrl.show();
+                            let _ = ctrl.set_focus();
+                        }
+                    }
+                }) {
+                    eprintln!("[window] run_on_main_thread 失败: {e}");
                 }
             }
         });
@@ -278,7 +334,7 @@ fn hide_control_panel(app: AppHandle) {
 #[tauri::command]
 fn set_refresh_interval(app: AppHandle, interval_seconds: u32) -> Result<(), String> {
     let interval_ms = interval_seconds * 1000;
-    
+
     // 更新所有已打开的 Provider 窗口的刷新间隔
     for provider in providers::all_providers() {
         let label = provider.window_label();
@@ -287,11 +343,23 @@ fn set_refresh_interval(app: AppHandle, interval_seconds: u32) -> Result<(), Str
             let _ = win.eval(&script);
         }
     }
-    
+
     Ok(())
 }
 
-// ─── 全局事件处理 ─────────────────────────────────────────────────────────────
+/// 设置任务栏小组件颜色（仅 Windows，其他平台调用将被忽略）
+/// 参数均为 `#RRGGBB` 格式的 HTML 颜色字符串。
+#[tauri::command]
+fn set_taskbar_widget_colors(
+    bg_color: String,
+    text_color: String,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    windows_taskbar::set_widget_colors(&bg_color, &text_color);
+    Ok(())
+}
+
+// ─── 全局事件处理 ─────────────────────────────────────────────────────
 
 fn setup_global_events(overlay: &tauri::WebviewWindow, handle: &AppHandle) {
     // ── provider_login_detected ─────────────────────────────────────────────────────
@@ -310,15 +378,22 @@ fn setup_global_events(overlay: &tauri::WebviewWindow, handle: &AppHandle) {
 
         println!("[Monitor] 登录成功: provider_id={}", provider_id);
 
+        // 检查当前状态：若已处于"connected"（重新登录模式），忽略此次事件，不隐藏窗口
+        let current_status = {
+            let state = handle_clone.state::<AppState>();
+            let map = state.provider_status.lock().unwrap();
+            map.get(provider_id).cloned().unwrap_or_default()
+        };
+        if current_status == "connected" {
+            println!("[DEBUG] Provider 已处于 connected 状态，忽略 login_detected（重新登录模式，窗口保持打开）");
+            return;
+        }
+
         // 隐藏对应 Provider WebView（主线程安全）
         let label = format!("provider_{}", provider_id);
         println!("[DEBUG] 尝试隐藏窗口: {}", label);
         if let Some(win) = handle_clone.get_webview_window(&label) {
             let _ = handle_clone.run_on_main_thread(move || {
-                // 恢复登录检测
-                let _ = win.eval("if (window.__LSYS_RESUME_CHECK__) window.__LSYS_RESUME_CHECK__();");
-                println!("[DEBUG] 已恢复登录检测");
-                
                 if let Err(e) = win.hide() {
                     eprintln!("[ERROR] hide provider 失败: {e}");
                 } else {
@@ -393,10 +468,39 @@ fn setup_global_events(overlay: &tauri::WebviewWindow, handle: &AppHandle) {
         println!("[Monitor] 数据更新: provider_id={}", pid);
         overlay::push_provider_data(&overlay_clone, &json);
     });
+
+    // ── overlay_active_tab_changed ───────────────────────────────────────────────────────────────────────
+    // 当悬浮窗切换 TAB 或激活 TAB 的数据更新时，由 overlay JS 发出此事件。
+    // Windows：更新任务栏组件（第一行改为 TAB 名称）
+    // macOS：更新托盘标题（格式 "N)₁₂₃₄"，N 为 TAB 序号）
+    overlay.listen("overlay_active_tab_changed", move |event| {
+        println!("[DEBUG] 收到 overlay_active_tab_changed 事件");
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(event.payload()) else {
+            eprintln!("[ERROR] overlay_active_tab_changed payload 解析失败");
+            return;
+        };
+        let pid = json.get("provider_id").and_then(|v| v.as_str()).unwrap_or("?");
+        let tab = json.get("tab_index").and_then(|v| v.as_u64()).unwrap_or(0);
+        println!("[Monitor] 激活 TAB 变更: provider_id={}, tab_index={}", pid, tab);
+
+        #[cfg(target_os = "windows")]
+        windows_taskbar::update_widget_data(&json);
+
+        #[cfg(target_os = "macos")]
+        macos_tray::update_active_tab_tray(&json);
+    });
 }
 
 fn notify_control(handle: &AppHandle, provider_id: &str, status: &str) {
     println!("[DEBUG] notify_control: provider_id={}, status={}", provider_id, status);
+
+    // 同步更新 Rust 侧状态追踪
+    {
+        let state = handle.state::<AppState>();
+        let mut map = state.provider_status.lock().unwrap();
+        map.insert(provider_id.to_string(), status.to_string());
+    }
+
     if let Some(ctrl) = handle.get_webview_window("control") {
         let js = format!(
             "window.__onProviderStatus && window.__onProviderStatus('{}', '{}');",

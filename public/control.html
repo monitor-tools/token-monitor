@@ -61,10 +61,17 @@
       color: #8b949e;
     }
 
-    .settings-btn {
+    .header-actions {
       position: absolute;
       top: 0;
       right: 0;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .settings-btn,
+    .feedback-btn {
       background: transparent;
       border: none;
       padding: 4px;
@@ -75,9 +82,17 @@
       line-height: 1;
     }
 
-    .settings-btn:hover {
+    .settings-btn:hover,
+    .feedback-btn:hover {
       color: #c9d1d9;
+    }
+
+    .settings-btn:hover {
       transform: rotate(30deg);
+    }
+
+    .feedback-btn {
+      font-size: 14px;
     }
 
     /* ── Provider list (3 cards in one row) ── */
@@ -344,25 +359,25 @@
       background: #161b22;
       border: 1px solid #30363d;
       border-radius: 8px;
-      padding: 12px 14px;
-      margin-bottom: 10px;
+      padding: 8px 12px;
+      margin-bottom: 8px;
     }
 
     .settings-section-title {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       color: #e6edf3;
-      margin-bottom: 10px;
+      margin-bottom: 7px;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
     }
 
     .settings-row {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .settings-row:last-child {
@@ -373,7 +388,7 @@
       font-size: 11px;
       color: #8b949e;
       flex-shrink: 0;
-      min-width: 90px;
+      min-width: 76px;
     }
 
     .settings-input {
@@ -381,7 +396,7 @@
       background: #0d1117;
       border: 1px solid #30363d;
       border-radius: 5px;
-      padding: 5px 10px;
+      padding: 4px 8px;
       font-size: 11px;
       color: #e6edf3;
       font-family: inherit;
@@ -409,8 +424,29 @@
       display: flex;
       justify-content: flex-end;
       gap: 8px;
-      padding-top: 12px;
+      padding-top: 10px;
       border-top: 1px solid #30363d;
+    }
+
+    /* 颜色选择器 */
+    .settings-color {
+      width: 38px;
+      height: 22px;
+      padding: 1px 2px;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      cursor: pointer;
+      background: #0d1117;
+      flex-shrink: 0;
+    }
+    .settings-color::-webkit-color-swatch-wrapper { padding: 0; }
+    .settings-color::-webkit-color-swatch { border: none; border-radius: 2px; }
+
+    .color-hex {
+      font-size: 10px;
+      color: #6e7681;
+      font-family: monospace;
+      min-width: 52px;
     }
 
     .btn-save {
@@ -526,7 +562,10 @@
   <div class="container">
 
     <div class="header">
-      <button class="settings-btn" id="settings-btn" title="设置">⚙️</button>
+      <div class="header-actions">
+        <button class="feedback-btn" id="feedback-btn" title="问题反馈"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" style="vertical-align:middle;"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm9 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM6.5 6a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Z"/></svg></button>
+        <button class="settings-btn" id="settings-btn" title="设置">⚙️</button>
+      </div>
       <h1>🔗 Code Plan 套餐余量监控</h1>
       <p>管理您的 Code Plan 套餐余量</p>
     </div>
@@ -576,16 +615,29 @@
     </div>
 
     <div class="settings-content">
+      <!-- 刷新间隔 -->
       <div class="settings-section">
         <div class="settings-section-title">⏱️ 刷新间隔</div>
         <div class="settings-row">
-          <span class="settings-label">数据刷新间隔：</span>
-          <input type="number" id="refresh-interval" class="settings-input" min="60" max="600" value="60" />
+          <span class="settings-label">数据刷新：</span>
+          <input type="number" id="refresh-interval" class="settings-input" min="60" max="600" value="60" style="max-width:64px;" />
           <span class="settings-unit">秒</span>
+          <span style="font-size:9px;color:#6e7681;">(60–600，默认60)</span>
+        </div>
+      </div>
+
+      <!-- 任务栏小组件外观（仅 Windows 时显示） -->
+      <div class="settings-section" id="taskbar-section" style="display:none;">
+        <div class="settings-section-title">🎨 任务栏小组件外观</div>
+        <div class="settings-row">
+          <span class="settings-label">背景颜色：</span>
+          <input type="color" id="widget-bg-color" class="settings-color" value="#242611" />
+          <span class="color-hex" id="widget-bg-hex">#242611</span>
         </div>
         <div class="settings-row">
-          <span class="settings-label"></span>
-          <span style="font-size: 10px; color: #6e7681;">范围：60-600秒，默认60秒</span>
+          <span class="settings-label">文字颜色：</span>
+          <input type="color" id="widget-text-color" class="settings-color" value="#999999" />
+          <span class="color-hex" id="widget-text-hex">#999999</span>
         </div>
       </div>
     </div>
@@ -598,10 +650,10 @@
 
   <script>
     var PROVIDERS = [
-      { id: 'aliyun', name: '阿里云百炼', desc: '资源包 & 用量监控' },
+      { id: 'aliyun', name: '阿里云', desc: '资源包 & 用量监控' },
       { id: 'baidu', name: '百度千帆', desc: '订阅资源监控' },
-      { id: 'volcengine', name: '火山引擎方舟', desc: '订阅套餐 & 用量监控' },
-      { id: 'chinamobile', name: '中国移动智算包', desc: 'API Key 套餐监控' }
+      { id: 'volcengine', name: '火山引擎', desc: '订阅套餐 & 用量监控' },
+      { id: 'chinamobile', name: '中国移动', desc: 'API Key 套餐监控' }
     ];
 
     var providerState = {};
@@ -610,6 +662,13 @@
 
     // 配置管理 - 提前定义，供 connectProvider 使用
     var currentRefreshInterval = 60; // 当前生效的刷新间隔
+
+    // Windows 检测（用于显示任务栏颜色设置）
+    var isWindows = /Win/.test(navigator.platform) || /Windows/.test(navigator.userAgent);
+
+    // 任务栏小组件颜色（Windows only，与 Rust 侧默认值保持一致）
+    var widgetBgColor   = '#242611';
+    var widgetTextColor = '#999999';
 
     // 确认对话框管理 - 提前定义，供 connectProvider 使用
     var confirmCallback = null;
@@ -754,9 +813,17 @@
     }
 
     function reconnectProvider(id) {
-      providerState[id] = 'disconnected';
-      render();
-      connectProvider(id);
+      // 重新登录模式：直接打开窗口，不改变主面板状态，不弹出确认对话框
+      // Rust 侧看到已连接状态会仅显示窗口，不会发送"connecting"通知，不会自动关闭窗口
+      // 主面板按钮状态由窗口关闭时 Rust 发来的状态决定
+      console.log('[control] reconnectProvider（重新登录模式）:', id);
+      tauriInvoke('connect_provider', { providerId: id, refreshInterval: currentRefreshInterval })
+        .then(function (result) {
+          console.log('[control] reconnect connect_provider 成功:', result);
+        })
+        .catch(function (err) {
+          console.error('[control] reconnect connect_provider 失败:', err);
+        });
     }
 
     window.__onProviderStatus = function (id, status) {
@@ -792,6 +859,24 @@
     console.log('[control] 页面加载完成，初始化');
     console.log('[control] Tauri API 状态:', window.__TAURI__ ? '可用' : '不可用');
     render();
+
+    // 初始化 Windows 专属功能
+    if (isWindows) {
+      // 显示任务栏颜色设置区
+      var taskbarSection = document.getElementById('taskbar-section');
+      if (taskbarSection) taskbarSection.style.display = 'block';
+
+      // 颜色选择器：实时更新 hex 预览文字
+      function bindColorHex(inputId, hexId) {
+        var input = document.getElementById(inputId);
+        var hexEl = document.getElementById(hexId);
+        if (input && hexEl) {
+          input.addEventListener('input', function () { hexEl.textContent = input.value; });
+        }
+      }
+      bindColorHex('widget-bg-color',   'widget-bg-hex');
+      bindColorHex('widget-text-color', 'widget-text-hex');
+    }
 
     // 绑定确认对话框事件
     var confirmDialogOverlay = document.getElementById('confirm-dialog-overlay');
@@ -845,13 +930,33 @@
     var refreshInput = document.getElementById('refresh-interval');
     var settingsPage = document.getElementById('settings-page');
     var settingsBtn = document.getElementById('settings-btn');
+    var feedbackBtn = document.getElementById('feedback-btn');
     var closeSettingsBtn = document.getElementById('close-settings-btn');
     var cancelSettingsBtn = document.getElementById('cancel-settings-btn');
     var saveSettingsBtn = document.getElementById('save-settings-btn');
 
+    // 问题反馈 - 使用系统默认浏览器打开
+    feedbackBtn.addEventListener('click', function () {
+      var t = window.__TAURI__;
+      if (t && t.shell && typeof t.shell.open === 'function') {
+        t.shell.open('https://github.com/monitor-tools/token-monitor/issues');
+      } else {
+        window.open('https://github.com/monitor-tools/token-monitor/issues', '_blank');
+      }
+    });
+
     // 打开设置页面
     settingsBtn.addEventListener('click', function () {
       refreshInput.value = currentRefreshInterval;
+
+      // Windows: 填充颜色选择器的当前值
+      if (isWindows) {
+        var bgInput   = document.getElementById('widget-bg-color');
+        var textInput = document.getElementById('widget-text-color');
+        if (bgInput)   { bgInput.value   = widgetBgColor;   document.getElementById('widget-bg-hex').textContent   = widgetBgColor; }
+        if (textInput) { textInput.value = widgetTextColor; document.getElementById('widget-text-hex').textContent = widgetTextColor; }
+      }
+
       settingsPage.classList.add('active');
     });
 
@@ -876,6 +981,21 @@
 
       currentRefreshInterval = interval;
       console.log('[control] 保存刷新间隔:', interval, '秒');
+
+      // Windows: 保存任务栏小组件颜色
+      if (isWindows) {
+        var bgInput   = document.getElementById('widget-bg-color');
+        var textInput = document.getElementById('widget-text-color');
+        if (bgInput && textInput) {
+          widgetBgColor   = bgInput.value;
+          widgetTextColor = textInput.value;
+          console.log('[control] 保存任务栏颜色:', widgetBgColor, widgetTextColor);
+          tauriInvoke('set_taskbar_widget_colors', {
+            bgColor:   widgetBgColor,
+            textColor: widgetTextColor
+          });
+        }
+      }
 
       tauriInvoke('set_refresh_interval', { intervalSeconds: interval })
         .then(function () {

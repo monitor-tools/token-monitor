@@ -8,7 +8,7 @@ use super::ProviderConfig;
 pub fn provider() -> ProviderConfig {
     ProviderConfig {
         id: "aliyun",
-        name: "阿里云百炼",
+        name: "阿里云",
         target_url: "https://bailian.console.aliyun.com/cn-beijing?tab=plan#/efm/subscription/coding-plan",
         allowed_domains: vec![
             "https://*.aliyun.com".to_string(),
@@ -24,7 +24,7 @@ fn injection_script() -> String {
     console.log('[Aliyun] 注入脚本开始执行');
     console.log('[Aliyun] 当前 URL:', window.location.href);
     console.log('[Aliyun] Tauri API 可用性:', typeof window.__TAURI__);
-    
+
     if (window.__LSYS_ALIYUN_INJECTED__) {
         console.log('[Aliyun] 脚本已注入，跳过');
         return;
@@ -32,28 +32,24 @@ fn injection_script() -> String {
     window.__LSYS_ALIYUN_INJECTED__ = true;
 
     const PROVIDER_ID    = 'aliyun';
-    const PROVIDER_NAME  = '阿里云百炼';
+    const PROVIDER_NAME  = '阿里云';
     let FETCH_INTERVAL = 60_000; // 默认60秒，可通过 __LSYS_SET_INTERVAL__ 动态修改
 
-    let prevLoggedIn = null; // null | true | false
+    // ── window.name 状态持久化（跨页面导航保留登录状态）──────────────────────────
+    // window.name 在同一 WebView 窗口中跨导航持久存在，用于恢复 prevLoggedIn 状态，
+    // 避免重新导航后重复触发 login_detected 事件。
+    const WN_LOGGED_IN = '|__LSYS_LOGGED_IN__|';
+    function wnHas(flag)   { return window.name.includes(flag); }
+    function wnSet(flag)   { if (!wnHas(flag)) window.name += flag; }
+    function wnClear(flag) { window.name = window.name.split(flag).join(''); }
+
+    let prevLoggedIn = wnHas(WN_LOGGED_IN) ? true : null; // 跨导航保留登录状态
     let lastFetchAt  = 0;
-    let checkPaused  = false; // 检测是否暂停
 
     // 暴露全局函数供 Rust 侧动态修改刷新间隔
     window.__LSYS_SET_INTERVAL__ = function(intervalMs) {
         FETCH_INTERVAL = intervalMs;
         console.log('[Aliyun] 刷新间隔已更新为:', intervalMs, 'ms');
-    };
-
-    // 暴露全局函数供 Rust 侧暂停/恢复检测
-    window.__LSYS_PAUSE_CHECK__ = function() {
-        checkPaused = true;
-        console.log('[Aliyun] 登录检测已暂停');
-    };
-
-    window.__LSYS_RESUME_CHECK__ = function() {
-        checkPaused = false;
-        console.log('[Aliyun] 登录检测已恢复');
     };
 
     // ── IPC 工具 ──────────────────────────────────────────────────────────────
@@ -160,17 +156,17 @@ fn injection_script() -> String {
 
     function triggerPageRefresh() {
         console.log('[Aliyun] 尝试触发页面刷新');
-        
+
         try {
             const sparkIcons = document.querySelectorAll('.spark-icon-spark-refresh-line');
             if (sparkIcons.length === 0) {
                 console.log('[Aliyun] 未找到刷新按钮 (.spark-icon-spark-refresh-line)');
                 return false;
             }
-            
+
             console.log('[Aliyun] 找到', sparkIcons.length, '个刷新按钮');
             let clickedCount = 0;
-            
+
             sparkIcons.forEach((icon, index) => {
                 const clickable = icon.closest('button, span[role="button"], a, [onclick]');
                 if (clickable) {
@@ -183,7 +179,7 @@ fn injection_script() -> String {
                     clickedCount++;
                 }
             });
-            
+
             console.log('[Aliyun] 共点击了', clickedCount, '个刷新按钮');
             return clickedCount > 0;
         } catch (e) {
@@ -204,17 +200,17 @@ fn injection_script() -> String {
             console.log('[Aliyun] URL 不匹配，跳过数据提取');
             return;
         }
-        
+
         // 每次拉取数据前先触发页面刷新
         triggerPageRefresh();
-        
+
         // 触发刷新后等待 5 秒让页面更新
         setTimeout(() => {
             console.log('[Aliyun] 刷新后延迟提取数据');
             extractAndSendData();
         }, 5000);
     }
-    
+
     function extractAndSendData() {
         const info = extractPlanInfo();
         if (!info) {
@@ -236,12 +232,6 @@ fn injection_script() -> String {
     // 已登录期间每 FETCH_INTERVAL ms 拉取一次数据。
 
     function tick() {
-        // 如果检测被暂停，跳过本次检测
-        if (checkPaused) {
-            console.log('[Aliyun] 检测已暂停，跳过本次 tick');
-            return;
-        }
-
         const loginId  = getCookie('login_aliyunid').trim();
         const loggedIn = loginId.length > 0;
 
@@ -252,6 +242,7 @@ fn injection_script() -> String {
                 // null/false → true
                 console.log('[Aliyun] 检测到登录');
                 prevLoggedIn = true;
+                wnSet(WN_LOGGED_IN);
                 emitToRust('provider_login_detected', { provider_id: PROVIDER_ID });
                 // Rust 侧收到后会立即推占位数据显示悬浮窗。
                 // lastFetchAt 保持 0 → 下方区间检查（Date.now()-0 >= 60000）立即为 true
@@ -260,6 +251,7 @@ fn injection_script() -> String {
                 if (prevLoggedIn === true) {
                     // true → false
                     console.log('[Aliyun] 检测到登出');
+                    wnClear(WN_LOGGED_IN);
                     emitToRust('provider_logout_detected', { provider_id: PROVIDER_ID });
                 }
                 prevLoggedIn = false;
@@ -279,7 +271,7 @@ fn injection_script() -> String {
         console.log('[Aliyun] 页面加载完成，执行 tick');
         tick();
     });
-    
+
     // 立即执行一次
     console.log('[Aliyun] 立即执行首次 tick');
     tick();

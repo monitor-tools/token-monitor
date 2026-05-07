@@ -21,9 +21,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 // ─── 常量 ─────────────────────────────────────────────────────────────────────
 
 pub const EXPANDED_W: u32 = 340;
-pub const EXPANDED_H: u32 = 250;  // 减小高度：255 -> 250
-pub const COMPACT_W:  u32 = 160;  // 减小宽度：200 -> 160
-pub const COMPACT_H:  u32 = 24;   // 进一步减小高度：28 -> 24
+pub const EXPANDED_H: u32 = 250;
 
 // 标记 overlay 窗口是否已经初始化显示过
 static OVERLAY_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -40,8 +38,7 @@ pub fn create_overlay(handle: &AppHandle) -> tauri::Result<tauri::WebviewWindow>
         WebviewUrl::App("overlay.html".into()),
     )
     .title("Code Plan 套餐余量监控")
-    .inner_size(EXPANDED_W as f64, EXPANDED_H as f64) // macOS 使用逻辑尺寸
-    .min_inner_size(COMPACT_W as f64, COMPACT_H as f64)
+    .inner_size(EXPANDED_W as f64, EXPANDED_H as f64)
     .maximizable(false)
     .minimizable(false)
     .resizable(false)
@@ -60,12 +57,12 @@ pub fn create_overlay(handle: &AppHandle) -> tauri::Result<tauri::WebviewWindow>
     )
     .title("Code Plan 套餐余量监控")
     .inner_size(EXPANDED_W as f64, EXPANDED_H as f64)
-    .min_inner_size(COMPACT_W as f64, COMPACT_H as f64)
     .maximizable(false)
     .minimizable(false)
     .resizable(false)
     .decorations(false)
     .transparent(true)
+    .shadow(false) // Windows: 去除系统默认的 1px 边框
     .always_on_top(true)
     .skip_taskbar(false) // Windows: 改为 false，避免窗口被系统隐藏
     .visible(false)
@@ -106,39 +103,6 @@ pub fn setup_overlay_events(overlay: &tauri::WebviewWindow) {
                 let _ = ov_resize.set_size(Size::Logical(new_size));
                 eprintln!("[overlay] Window size adjusted to: {}x{}", width, height);
             }
-        }
-    });
-
-    // 模式切换事件
-    let ov = overlay.clone();
-    overlay.listen("overlay_toggle_mode", move |_| {
-        // 获取当前窗口尺寸（物理像素）
-        let Ok(physical_size) = ov.inner_size() else { 
-            eprintln!("[overlay] Failed to get inner_size");
-            return 
-        };
-        
-        // 获取缩放因子
-        let scale_factor = ov.scale_factor().unwrap_or(1.0);
-        
-        // 转换为逻辑像素
-        let logical_width = (physical_size.width as f64 / scale_factor) as u32;
-        let logical_height = (physical_size.height as f64 / scale_factor) as u32;
-        
-        eprintln!("[overlay] toggle_mode event received");
-        eprintln!("[overlay] Physical size: {}x{}", physical_size.width, physical_size.height);
-        eprintln!("[overlay] Scale factor: {}", scale_factor);
-        eprintln!("[overlay] Logical size: {}x{}", logical_width, logical_height);
-        eprintln!("[overlay] COMPACT_W={}, checking if {} <= {}", COMPACT_W, logical_width, COMPACT_W + 10);
-        
-        if logical_width <= COMPACT_W + 10 {
-            eprintln!("[overlay] Expanding to corner...");
-            expand_to_corner(&ov);
-            let _ = ov.eval("window.setCompactMode(false);");
-        } else {
-            eprintln!("[overlay] Compacting to corner...");
-            compact_to_corner(&ov);
-            let _ = ov.eval("window.setCompactMode(true);");
         }
     });
 
@@ -196,7 +160,6 @@ pub fn push_provider_data(overlay: &tauri::WebviewWindow, payload: &serde_json::
     if !already_initialized {
         eprintln!("[overlay] First data received, showing window");
         show_initial(overlay);
-        let _ = overlay.eval("window.setCompactMode(false);");
         OVERLAY_INITIALIZED.store(true, Ordering::Relaxed);
     } else {
         eprintln!("[overlay] Data updated, keeping current visibility state");
@@ -226,90 +189,6 @@ pub fn show_initial(overlay: &tauri::WebviewWindow) {
         let y = (mp.y + ms.height as i32 - EXPANDED_H as i32 - 60).max(mp.y);
         let _ = overlay.set_position(Position::Physical(PhysicalPosition::new(x, y)));
     }
-}
-
-// ─── 角落定位函数 ─────────────────────────────────────────────────────────────
-
-/// 将悬浮窗收缩为折叠尺寸，并移动到屏幕象限对应的角落。
-///
-/// 算法：
-/// 1. 读取当前（展开）尺寸和位置
-/// 2. 通过窗口中心 vs 显示器中心的象限关系确定目标角落
-/// 3. 设置折叠尺寸，移动到角落
-///
-/// 在 macOS 上 set_size 异步生效，但此处先读旧尺寸、后写新尺寸+位置，不存在竞态。
-pub fn compact_to_corner(overlay: &tauri::WebviewWindow) {
-    let Ok(Some(monitor)) = overlay.current_monitor() else { return };
-    let Ok(pos)  = overlay.outer_position() else { return };
-    let Ok(size) = overlay.outer_size()     else { return };
-
-    let (x, y) = corner_position(&pos, &size, &monitor, COMPACT_W, COMPACT_H);
-    
-    // 所有平台统一使用逻辑尺寸
-    let _ = overlay.set_size(Size::Logical(tauri::LogicalSize::new(COMPACT_W as f64, COMPACT_H as f64)));
-    let _ = overlay.set_position(Position::Physical(PhysicalPosition::new(x, y)));
-}
-
-/// 将悬浮窗展开为完整尺寸，并锚定在与折叠窗口相同的角落。
-///
-/// 确保展开后鼠标仍在窗口内（不会立即触发 mouseleave → 再次折叠）。
-pub fn expand_to_corner(overlay: &tauri::WebviewWindow) {
-    let Ok(Some(monitor)) = overlay.current_monitor() else {
-        // 所有平台统一使用逻辑尺寸
-        let _ = overlay.set_size(Size::Logical(tauri::LogicalSize::new(EXPANDED_W as f64, EXPANDED_H as f64)));
-        return;
-    };
-    let Ok(pos)  = overlay.outer_position() else { return };
-    let Ok(size) = overlay.outer_size()     else { return }; // 当前折叠尺寸
-
-    let (x, y) = corner_position(&pos, &size, &monitor, EXPANDED_W, EXPANDED_H);
-    
-    // 所有平台统一使用逻辑尺寸
-    let _ = overlay.set_size(Size::Logical(tauri::LogicalSize::new(EXPANDED_W as f64, EXPANDED_H as f64)));
-    let _ = overlay.set_position(Position::Physical(PhysicalPosition::new(x, y)));
-    
-    // 展开后通知前端调整高度以适应内容
-    let _ = overlay.eval("setTimeout(() => adjustWindowHeight(), 100);");
-}
-
-/// 根据窗口中心相对于显示器中心的象限，计算目标角落坐标。
-///
-/// - 左上象限 → 左上角 `(monitor.x, monitor.y)`
-/// - 右上象限 → 右上角 `(monitor.right - w, monitor.y)`
-/// - 左下象限 → 左下角 `(monitor.x, monitor.bottom - h)`
-/// - 右下象限 → 右下角 `(monitor.right - w, monitor.bottom - h)`
-fn corner_position(
-    pos:     &tauri::PhysicalPosition<i32>,
-    size:    &tauri::PhysicalSize<u32>,
-    monitor: &tauri::Monitor,
-    target_w: u32,
-    target_h: u32,
-) -> (i32, i32) {
-    let mp = monitor.position();
-    let ms = monitor.size();
-
-    // 当前窗口中心
-    let win_cx = pos.x + size.width as i32 / 2;
-    let win_cy = pos.y + size.height as i32 / 2;
-    // 显示器中心
-    let mon_cx = mp.x + ms.width as i32 / 2;
-    let mon_cy = mp.y + ms.height as i32 / 2;
-
-    let snap_right  = win_cx >= mon_cx;
-    let snap_bottom = win_cy >= mon_cy;
-
-    let x = if snap_right {
-        (mp.x + ms.width as i32 - target_w as i32).max(mp.x)
-    } else {
-        mp.x
-    };
-    let y = if snap_bottom {
-        (mp.y + ms.height as i32 - target_h as i32).max(mp.y)
-    } else {
-        mp.y
-    };
-
-    (x, y)
 }
 
 // ─── 位置工具函数 ─────────────────────────────────────────────────────────────

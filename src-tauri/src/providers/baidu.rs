@@ -9,7 +9,7 @@ use super::ProviderConfig;
 pub fn provider() -> ProviderConfig {
     ProviderConfig {
         id: "baidu",
-        name: "百度千帆",
+        name: "百度",
         target_url: "https://console.bce.baidu.com/qianfan/resource/subscribe",
         allowed_domains: vec![
             "https://*.bce.baidu.com".to_string(),
@@ -31,25 +31,19 @@ fn injection_script() -> String {
     const PROVIDER_NAME  = '百度千帆';
     let FETCH_INTERVAL = 60_000; // 默认60秒，可通过 __LSYS_SET_INTERVAL__ 动态修改
 
-    let prevLoggedIn = null;
+    // ── window.name 状态持久化（跨页面导航保留登录状态）──────────────────────────
+    const WN_LOGGED_IN = '|__LSYS_LOGGED_IN__|';
+    function wnHas(flag)   { return window.name.includes(flag); }
+    function wnSet(flag)   { if (!wnHas(flag)) window.name += flag; }
+    function wnClear(flag) { window.name = window.name.split(flag).join(''); }
+
+    let prevLoggedIn = wnHas(WN_LOGGED_IN) ? true : null;
     let lastFetchAt  = 0;
-    let checkPaused  = false; // 检测是否暂停
 
     // 暴露全局函数供 Rust 侧动态修改刷新间隔
     window.__LSYS_SET_INTERVAL__ = function(intervalMs) {
         FETCH_INTERVAL = intervalMs;
         console.log('[Baidu] 刷新间隔已更新为:', intervalMs, 'ms');
-    };
-
-    // 暴露全局函数供 Rust 侧暂停/恢复检测
-    window.__LSYS_PAUSE_CHECK__ = function() {
-        checkPaused = true;
-        console.log('[Baidu] 登录检测已暂停');
-    };
-
-    window.__LSYS_RESUME_CHECK__ = function() {
-        checkPaused = false;
-        console.log('[Baidu] 登录检测已恢复');
     };
 
     // ── IPC 工具 ───────────────────────────────────────────────────────────────
@@ -158,17 +152,12 @@ fn injection_script() -> String {
     // ── 主循环 ─────────────────────────────────────────────────────────────────
 
     async function tick() {
-        // 如果检测被暂停，跳过本次检测
-        if (checkPaused) {
-            console.log('[Baidu] 检测已暂停，跳过本次 tick');
-            return;
-        }
-
         const loggedIn = isLoggedIn();
 
         if (prevLoggedIn !== true && loggedIn) {
             // null/false → true：检测到登录
             prevLoggedIn = true;
+            wnSet(WN_LOGGED_IN);
             await emitToRust('provider_login_detected', { provider_id: PROVIDER_ID });
             // Rust 侧收到后会立即推占位数据显示悬浮窗。
             // lastFetchAt 保持 0 → 下方区间检查立即为 true → 本 tick 末尾立即拉取真实数据；
@@ -176,6 +165,7 @@ fn injection_script() -> String {
         } else if (prevLoggedIn === true && !loggedIn) {
             // true → false：检测到登出
             prevLoggedIn = false;
+            wnClear(WN_LOGGED_IN);
             await emitToRust('provider_logout_detected', { provider_id: PROVIDER_ID });
         } else if (prevLoggedIn === null) {
             // 初始化：当前未登录，静默设置

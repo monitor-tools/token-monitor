@@ -1,6 +1,7 @@
 {
   "name": "token-monitor",
   "version": "1.0.0",
+  "author": "lsys.cc",
   "description": "Code Plan (Token Plan) 套餐余量桌面小工具",
   "scripts": {
     "dev": "vite",
