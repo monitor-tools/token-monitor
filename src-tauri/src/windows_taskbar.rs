@@ -58,6 +58,15 @@ use std::sync::atomic::AtomicI32;
 static LAST_GOOD_X: AtomicI32 = AtomicI32::new(i32::MIN);
 static LAST_GOOD_Y: AtomicI32 = AtomicI32::new(i32::MIN);
 
+/// 上次实际调用 SetWindowPos 时使用的坐标，用于「位置未变则跳过」优化
+static LAST_SET_X: AtomicI32 = AtomicI32::new(i32::MIN);
+static LAST_SET_Y: AtomicI32 = AtomicI32::new(i32::MIN);
+
+/// Previous tray_left value. Used to detect when TrayNotifyWnd layout is in transition
+/// (e.g. overflow panel opening/closing). When tray_left changes suddenly, we skip
+/// recomputing position and hold the last known-good location until it stabilizes.
+static PREV_TRAY_LEFT: AtomicI32 = AtomicI32::new(i32::MIN);
+
 // ─── 公共接口 ────────────────────────────────────────────────────────────────
 
 /// 创建任务栏文字组件（仅 Windows）
@@ -366,6 +375,31 @@ unsafe fn position_near_tray(hwnd: HWND) {
     }
     let tb_h = tb_rect.bottom - tb_rect.top;
 
+    // ── 1.5 任务栏为前台时立即重新提升 Z-order ─────────────────────────────
+    //
+    // 用户点击任务栏背景或任务按钮时，Shell_TrayWnd 会变成前台窗口，
+    // Windows 将其提到 TOPMOST 层顶部，把我们的 widget 压到任务栏后面。
+    //
+    // 修复策略（仿自 TrafficMonitor AdjustWindowPos）：
+    //   检测到前台窗口 == Shell_TrayWnd 时，立即调用 SetWindowPos(HWND_TOPMOST)。
+    //
+    // 为什么不会引起 overlay 闪烁：
+    //   overlay 弹出时前台窗口是 overlay 的 HWND，而非 Shell_TrayWnd，
+    //   因此此判断正好天然与两种情况互斥。
+    let fg = GetForegroundWindow();
+    if fg == taskbar {
+        let lx = LAST_SET_X.load(Ordering::Relaxed);
+        let ly = LAST_SET_Y.load(Ordering::Relaxed);
+        if lx != i32::MIN {
+            eprintln!("[taskbar] 任务栏为前台，重新提升 Z-order");
+            let _ = SetWindowPos(
+                hwnd, HWND_TOPMOST,
+                lx, ly, WIDGET_WIDTH, WIDGET_HEIGHT,
+                SWP_NOACTIVATE,
+            );
+        }
+    }
+
     // ── 2. 找到系统通知区域，取其左边界（屏幕坐标）────────────────────────────
     let tray_class = to_wide("TrayNotifyWnd");
     let tray_left = match FindWindowExW(
@@ -391,6 +425,29 @@ unsafe fn position_near_tray(hwnd: HWND) {
         "[taskbar] 任务栏: left={} right={} top={} bottom={}, 托盘左边界: {}",
         tb_rect.left, tb_rect.right, tb_rect.top, tb_rect.bottom, tray_left
     );
+
+    // ── 2.5 tray_left 稳定性检查 ─────────────────────────────────────────────
+    //
+    // 当「显示更多托盘图标」溢出面板弹出/收起时，TrayNotifyWnd 会短暂报告
+    // 一个异常的 left 值（不同于平时）。若我们直接用这个瞬变值重新计算位置，
+    // 会算出一个处于任务按钮区中间的坐标，widget 移过去后视觉上「消失」。
+    //
+    // 解决策略：
+    //   - 把上一帧的 tray_left 记录在 PREV_TRAY_LEFT
+    //   - 若本帧 tray_left 与上帧不同 → 布局正在过渡，本帧跳过重新计算，
+    //     仅重置 Z-order（防止被其他 TOPMOST 窗口遮住）并 return
+    //   - 若本帧与上帧相同（或为首次） → 布局稳定，正常计算并应用位置
+    let prev_tl = PREV_TRAY_LEFT.swap(tray_left, Ordering::Relaxed);
+    let tray_just_changed = prev_tl != i32::MIN && prev_tl != tray_left;
+    if tray_just_changed {
+        eprintln!(
+            "[taskbar] tray_left 从 {} 变为 {}，布局过渡中，保持当前位置",
+            prev_tl, tray_left
+        );
+        // widget 已在正确位置，直接跳过即可；不调用 SetWindowPos，
+        // 避免不必要的 Z-order 改变引起 overlay 等窗口闪烁
+        return;
+    }
 
     // ── 3. 收集已被占用的 X 区间（屏幕坐标） ─────────────────────────────────
     let mut occupied: Vec<(i32, i32)> = Vec::new();
@@ -429,13 +486,16 @@ unsafe fn position_near_tray(hwnd: HWND) {
     let x_ok    = x >= tb_rect.left && x + WIDGET_WIDTH <= tray_left + 10;
     let y_ok    = y >= tb_rect.top - 5 && y + WIDGET_HEIGHT <= tb_rect.bottom + 5;
 
+    // ── 7. 应用位置 ────────────────────────────────────────────────────────────────
+    // tray_left 已稳定（未发生过渡），可以直接计算并应用位置。
+
     let (final_x, final_y) = if tray_ok && x_ok && y_ok {
-        // 位置合法：记录为新的「上次好位置」
+        // 合法位置：更新历史好位置记录
         LAST_GOOD_X.store(x, Ordering::Relaxed);
         LAST_GOOD_Y.store(y, Ordering::Relaxed);
         (x, y)
     } else {
-        // 位置异常（通常是溢出面板过渡期）：尝试复用上次好位置，避免 widget 跳走
+        // 位置异常：复用上次好位置
         let lx = LAST_GOOD_X.load(Ordering::Relaxed);
         let ly = LAST_GOOD_Y.load(Ordering::Relaxed);
         if lx != i32::MIN {
@@ -449,6 +509,20 @@ unsafe fn position_near_tray(hwnd: HWND) {
             return;
         }
     };
+
+    // 位置未变 → 什么也不做，直接跳过
+    // （连 Z-order 重置也不调：每秒贺 Z-order 会把 widget 抬到 overlay、
+    //  候选框等窗口之上，导致点击时闪烁）
+    let last_set_x = LAST_SET_X.load(Ordering::Relaxed);
+    let last_set_y = LAST_SET_Y.load(Ordering::Relaxed);
+    if final_x == last_set_x && final_y == last_set_y {
+        return;
+    }
+
+    // 位置发生变化 → 立即移动
+    eprintln!("[taskbar] 执行 SetWindowPos ({}, {})", final_x, final_y);
+    LAST_SET_X.store(final_x, Ordering::Relaxed);
+    LAST_SET_Y.store(final_y, Ordering::Relaxed);
 
     let _ = SetWindowPos(
         hwnd, HWND_TOPMOST,
@@ -565,8 +639,30 @@ unsafe fn collect_floating_widgets(
         let mut r = RECT::default();
         if GetWindowRect(hwnd, &mut r).is_err() { return true.into(); }
 
-        // 与任务栏区域垂直重叠
-        if r.bottom <= s.tb_top || r.top >= s.tb_bottom { return true.into(); }
+        // ── 垂直「包含」判定（关键修复）────────────────────────────────────
+        //
+        // 之前用「任意重叠」：只要 bottom > tb_top && top < tb_bottom 就算命中。
+        // 这会错误地把搜狗/百度等输入法悬浮框计入（它们出现在屏幕底部时，
+        // 窗口底部会稍微碰到任务栏顶部，产生几像素重叠）。
+        //
+        // 改为「基本包含」：要求窗口的 top 和 bottom 均在任务栏高度范围内
+        // （允许 ±4px 容差），确保只有刻意贴着任务栏高度摆放的 widget
+        // （如 TrafficMonitor 浮动模式）才被算作占用。
+        let tolerance = 4_i32;
+        let contained_vertically =
+            r.top    >= s.tb_top    - tolerance &&
+            r.bottom <= s.tb_bottom + tolerance;
+        if !contained_vertically {
+            // 打印原因，便于排查哪个窗口触发了过滤
+            let mut buf = [0u16; 256];
+            let n = GetClassNameW(hwnd, &mut buf);
+            let cls = if n > 0 { String::from_utf16_lossy(&buf[..n as usize]) } else { "?".to_string() };
+            eprintln!(
+                "[taskbar] 跳过垂直超出任务栏的窗口 class={} rect=[{},{},{},{}] taskbar=[{},{}]",
+                cls, r.left, r.top, r.right, r.bottom, s.tb_top, s.tb_bottom
+            );
+            return true.into();
+        }
 
         // 在托盘左侧、任务栏范围内的水平区域
         if r.right <= s.tb_left || r.left >= s.tray_left { return true.into(); }
@@ -574,7 +670,10 @@ unsafe fn collect_floating_widgets(
         let left  = r.left.max(s.tb_left);
         let right = r.right.min(s.tray_left);
         if right > left + 4 {
-            eprintln!("[taskbar] 浮动窗口占用 [{}, {}]", left, right);
+            let mut buf = [0u16; 256];
+            let n = GetClassNameW(hwnd, &mut buf);
+            let cls = if n > 0 { String::from_utf16_lossy(&buf[..n as usize]) } else { "?".to_string() };
+            eprintln!("[taskbar] 浮动窗口占用 class={} [{}, {}]", cls, left, right);
             s.regions.push((left, right));
         }
         true.into()
@@ -595,9 +694,15 @@ unsafe fn collect_floating_widgets(
 
 // ─── 辅助函数 ────────────────────────────────────────────────────────────────
 
-/// 判断是否为 Windows Shell 系统窗口类（需跳过，不视为第三方占用）
+/// 判断是否为 Windows Shell 系统窗口类或输入法相关窗口（需跳过，不视为第三方占用）
+///
+/// ## 为什么需要过滤输入法窗口
+/// 输入法候选框（如微软拼音、搜狗、百度等）通常是 `WS_EX_TOPMOST` 的浮动窗口。
+/// 当用户在屏幕底部的输入框输入文字时，候选框可能出现在任务栏附近，
+/// 若不过滤则会被 `collect_floating_widgets` 误判为「占用区间」，导致 widget 跳位。
 fn is_system_window_class(cls: &str) -> bool {
     const SYSTEM: &[&str] = &[
+        // ── Windows Shell 核心窗口 ──────────────────────────────────────────
         "Shell_TrayWnd",
         "TrayNotifyWnd",
         "ReBarWindow32",
@@ -606,17 +711,42 @@ fn is_system_window_class(cls: &str) -> bool {
         "TrayDummySearchControl",
         "TrayShowDesktopButtonWClass",
         "TrayButton",
-        "Button",          // Win10 开始按钮
-        "SysPager",        // 系统托盘分页器
-        "ToolbarWindow32", // 各种系统工具栏
+        "Button",
+        "SysPager",
+        "ToolbarWindow32",
         "NotifyIconOverflowWindow",
-        "MSCTFIME UI",
-        "IME",
         "WorkerW",
         "Progman",
         "DV2ControlHost",
         "Shell_SecondaryTrayWnd",
         "Clock",
+        // ── 输入法框架（Text Services Framework）───────────────────────────
+        // 微软 TSF 核心
+        "MSCTFIME UI",
+        "IME",
+        "CiceroUIWndFrame",          // TSF 语言栏浮动框架
+        "TF_FloatLangBar_WndTitle",   // TSF 语言栏标题
+        "TF_CiceroHiddenWnd",         // TSF 隐藏辅助窗口
+        "TfThreadUI",                 // TSF 线程 UI
+        // 微软拼音 / 微软输入法
+        "Microsoft IME",
+        "MSTIP_DocIcon",
+        // ── 第三方主流输入法（防止候选框被误计入占用区间）──────────────────
+        // 搜狗输入法
+        "SogouPY",
+        "SogouPY.1",
+        "SogouPYCandWindow",
+        // 百度输入法
+        "BaiduIMEWndClass",
+        "BaiduPinyin",
+        // 讯飞输入法
+        "IFLYIMEWndClass",
+        // 谷歌拼音
+        "GooglePinyinInputMain",
+        // QQ 输入法
+        "QQInputMain",
+        // 紫光拼音
+        "SPInputMain",
     ];
 
     SYSTEM.iter().any(|&s| cls == s)
@@ -624,6 +754,16 @@ fn is_system_window_class(cls: &str) -> bool {
         || cls.starts_with("Windows.Internal.")
         || cls.contains("XamlIsland")
         || cls.contains("Xaml")
+        // TSF / IME 相关类名通配
+        || cls.starts_with("MSCTF")
+        || cls.starts_with("TF_")
+        || cls.starts_with("Sogou")
+        || cls.starts_with("Baidu")
+        || cls.starts_with("IFLY")
+        || cls.ends_with("IMEWndClass")
+        || cls.ends_with("InputMain")
+        || cls.ends_with("CandWindow")
+        || cls.ends_with("CandidateWnd")
 }
 
 /// 从 `start_x` 向左找第一个宽度为 `width` 的空闲区间，不与任何 `occupied` 重叠。
